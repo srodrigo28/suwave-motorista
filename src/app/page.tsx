@@ -4,11 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getDriverReviewStatus,
   loginDriverAccount,
+  pingDriverLocation,
   registerDriverAccount,
   saveDriverCnh,
   saveDriverFacePhoto,
   saveDriverProfile,
   saveDriverVehicle,
+  setDriverOffline,
+  setDriverOnline,
   submitDriverReview,
   uploadDriverImage,
   type UploadResult,
@@ -823,7 +826,86 @@ function Status({
   );
 }
 
-function Dashboard({ go }: { go: (screen: Screen) => void }) {
+function getCurrentPosition() {
+  return new Promise<GeolocationPosition>((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Seu navegador não liberou localização."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      maximumAge: 15000,
+      timeout: 12000,
+    });
+  });
+}
+
+async function sendCurrentDriverLocation(token: string) {
+  const position = await getCurrentPosition();
+  await pingDriverLocation(token, {
+    accuracy_meters: position.coords.accuracy,
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  });
+}
+
+function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string }) {
+  const [isOnline, setIsOnline] = useState(false);
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOnline || !token) {
+      return;
+    }
+
+    const activeToken = token;
+    let cancelled = false;
+
+    async function syncLocation() {
+      try {
+        await sendCurrentDriverLocation(activeToken);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Não foi possível atualizar sua localização.");
+        }
+      }
+    }
+
+    const interval = window.setInterval(syncLocation, 30000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isOnline, token]);
+
+  async function handleToggleOnline() {
+    if (!token) {
+      setError("Entre novamente para ficar online.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError("");
+    try {
+      if (isOnline) {
+        const availability = await setDriverOffline(token);
+        setIsOnline(availability.is_online);
+        return;
+      }
+
+      await sendCurrentDriverLocation(token);
+      const availability = await setDriverOnline(token);
+      setIsOnline(availability.is_online);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível alterar sua disponibilidade.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <section className="map-screen">
       <div className="map-art">
@@ -845,7 +927,10 @@ function Dashboard({ go }: { go: (screen: Screen) => void }) {
           </div>
           <div className="mini-car" />
         </div>
-        <ActionButton onClick={() => go("dashboard")}>Online</ActionButton>
+        {error ? <p className="form-error">{error}</p> : null}
+        <ActionButton onClick={handleToggleOnline}>
+          {isSubmitting ? "Atualizando..." : isOnline ? "Ficar offline" : "Online"}
+        </ActionButton>
         <ActionButton onClick={() => go("vehicle-brand")} secondary>
           Adicionar veículo
         </ActionButton>
@@ -1279,7 +1364,7 @@ export default function Home() {
       case "status":
         return <Status go={go} token={driverToken} />;
       case "dashboard":
-        return <Dashboard go={go} />;
+        return <Dashboard go={go} token={driverToken} />;
       case "vehicle-brand":
         return <VehicleBrand go={go} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} />;
       case "vehicle-data":

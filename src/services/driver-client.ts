@@ -27,6 +27,12 @@ export type DriverReviewStatus = {
   missing: string[];
 };
 
+export type DriverAvailability = {
+  can_receive_rides: boolean;
+  is_online: boolean;
+  missing: string[];
+};
+
 async function parseResponse<T>(response: Response) {
   const body = (await response.json().catch(() => ({}))) as Partial<ApiEnvelope<T>> & {
     error?: { message?: string };
@@ -81,6 +87,25 @@ export async function saveDriverProfile(
     body: JSON.stringify(input),
     headers: authJsonHeaders(token),
     method: "POST",
+  });
+
+  return parseResponse(response);
+}
+
+export async function updateDriverProfile(
+  token: string,
+  input: {
+    birth_date?: string;
+    cpf?: string;
+    email: string;
+    full_name: string;
+    phone?: string;
+  },
+) {
+  const response = await fetch(`${apiBaseUrl}/driver/profile`, {
+    body: JSON.stringify(input),
+    headers: authJsonHeaders(token),
+    method: "PUT",
   });
 
   return parseResponse(response);
@@ -168,6 +193,67 @@ export async function saveDriverVehicle(
   });
 
   return parseResponse(response);
+}
+
+export async function updateDriverVehicle(
+  token: string,
+  vehicleId: string,
+  input: {
+    brand: string;
+    front_photo_file_id?: string | null;
+    front_photo_url?: string | null;
+    interior_photo_file_id?: string | null;
+    interior_photo_url?: string | null;
+    model: string;
+    plate: string;
+    rear_photo_file_id?: string | null;
+    rear_photo_url?: string | null;
+    side_photo_file_id?: string | null;
+    side_photo_url?: string | null;
+  },
+) {
+  const response = await fetch(`${apiBaseUrl}/driver/vehicle/${vehicleId}`, {
+    body: JSON.stringify(input),
+    headers: authJsonHeaders(token),
+    method: "PUT",
+  });
+
+  return parseResponse(response);
+}
+
+export async function pingDriverLocation(
+  token: string,
+  input: {
+    accuracy_meters?: number | null;
+    latitude: number;
+    longitude: number;
+  },
+) {
+  const response = await fetch(`${apiBaseUrl}/driver/location/ping`, {
+    body: JSON.stringify(input),
+    headers: authJsonHeaders(token),
+    method: "POST",
+  });
+
+  return parseResponse(response);
+}
+
+export async function setDriverOnline(token: string) {
+  const response = await fetch(`${apiBaseUrl}/driver/availability/online`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+  });
+
+  return parseResponse<DriverAvailability>(response);
+}
+
+export async function setDriverOffline(token: string) {
+  const response = await fetch(`${apiBaseUrl}/driver/availability/offline`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+  });
+
+  return parseResponse<DriverAvailability>(response);
 }
 
 function authJsonHeaders(token: string) {
