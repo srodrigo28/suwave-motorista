@@ -296,15 +296,19 @@ function Progress({
 }
 
 function Field({
+  inputMode,
   icon,
   label,
+  maxLength,
   onChange,
   secure = false,
   type,
   value,
 }: {
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   icon: string;
   label: string;
+  maxLength?: number;
   onChange?: (value: string) => void;
   secure?: boolean;
   type?: string;
@@ -316,6 +320,8 @@ function Field({
         <Icon name={icon} />
       </span>
       <input
+        inputMode={inputMode}
+        maxLength={maxLength}
         onChange={(event) => onChange?.(event.target.value)}
         placeholder={label}
         type={type ?? (secure ? "password" : "text")}
@@ -328,6 +334,57 @@ function Field({
       ) : null}
     </label>
   );
+}
+
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function maskDate(value: string) {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (digits.length <= 2) {
+    return digits;
+  }
+  if (digits.length <= 4) {
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  }
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function maskCpf(value: string) {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length <= 3) {
+    return digits;
+  }
+  if (digits.length <= 6) {
+    return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  }
+  if (digits.length <= 9) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  }
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function maskPhone(value: string) {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length <= 2) {
+    return digits;
+  }
+  if (digits.length <= 7) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function maskedDateToIso(value: string) {
+  const digits = onlyDigits(value);
+  if (digits.length !== 8) {
+    return "";
+  }
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
+  return `${year}-${month}-${day}`;
 }
 
 function ActionButton({
@@ -438,25 +495,41 @@ function Signup({
       setError("As senhas precisam ser iguais.");
       return;
     }
+    const birthDateIso = maskedDateToIso(form.birth_date);
+    const cpf = onlyDigits(form.cpf);
+    const whatsapp = onlyDigits(form.whatsapp);
+
+    if (form.birth_date && !birthDateIso) {
+      setError("Informe a data no formato DD/MM/AAAA.");
+      return;
+    }
+    if (cpf.length !== 11) {
+      setError("Informe um CPF com 11 números.");
+      return;
+    }
+    if (whatsapp.length < 10) {
+      setError("Informe um WhatsApp com DDD.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const session = await registerDriverAccount({
-        birth_date: form.birth_date || undefined,
-        cpf: form.cpf || undefined,
-        email: form.email,
+        birth_date: birthDateIso || undefined,
+        cpf,
+        email: form.email.trim().toLowerCase(),
         full_name: form.full_name,
         password: form.password,
-        whatsapp: form.whatsapp || undefined,
+        whatsapp,
       });
       localStorage.setItem("suwave-driver-token", session.access_token);
       onAuthenticated(session.access_token);
       await saveDriverProfile(session.access_token, {
-        birth_date: form.birth_date || undefined,
-        cpf: form.cpf || undefined,
-        email: form.email,
+        birth_date: birthDateIso || undefined,
+        cpf,
+        email: form.email.trim().toLowerCase(),
         full_name: form.full_name,
-        phone: form.whatsapp || undefined,
+        phone: whatsapp,
       });
       go("face");
     } catch (err) {
@@ -477,14 +550,29 @@ function Signup({
         <Field icon="user" label="Nome completo" onChange={(value) => updateField("full_name", value)} value={form.full_name} />
         <Field
           icon="calendar"
-          label="Data de nascimento"
-          onChange={(value) => updateField("birth_date", value)}
-          type="date"
+          inputMode="numeric"
+          label="DD/MM/AAAA"
+          maxLength={10}
+          onChange={(value) => updateField("birth_date", maskDate(value))}
           value={form.birth_date}
         />
-        <Field icon="id" label="CPF" onChange={(value) => updateField("cpf", value)} value={form.cpf} />
+        <Field
+          icon="id"
+          inputMode="numeric"
+          label="CPF"
+          maxLength={14}
+          onChange={(value) => updateField("cpf", maskCpf(value))}
+          value={form.cpf}
+        />
         <Field icon="mail" label="E-mail" onChange={(value) => updateField("email", value)} type="email" value={form.email} />
-        <Field icon="phone" label="WhatsApp" onChange={(value) => updateField("whatsapp", value)} value={form.whatsapp} />
+        <Field
+          icon="phone"
+          inputMode="tel"
+          label="WhatsApp"
+          maxLength={15}
+          onChange={(value) => updateField("whatsapp", maskPhone(value))}
+          value={form.whatsapp}
+        />
         <Field icon="lock" label="Senha" onChange={(value) => updateField("password", value)} secure value={form.password} />
         <Field
           icon="lock"

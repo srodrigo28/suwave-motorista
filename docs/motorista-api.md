@@ -5,6 +5,7 @@ Total de rotas documentadas: 23
 Status inicial:
 
 [x] cadastro
+[x] mascaras dos campos
 [x] uploads docs
 [x] aprovacao automatica MVP
 [x] veiculo
@@ -34,6 +35,17 @@ Base da API:
 ```text
 /api/v1
 ```
+
+## Mascaras dos Campos
+
+[x] Nome completo sem mascara, texto livre.
+[x] Data de nascimento com mascara `DD/MM/AAAA`.
+[x] CPF com mascara `000.000.000-00`.
+[x] WhatsApp com mascara `(00) 00000-0000`.
+[x] E-mail em campo de e-mail.
+[x] Senha e confirmar senha em campo protegido.
+[x] Antes de enviar para API, data vira `AAAA-MM-DD`.
+[x] Antes de enviar para API, CPF e WhatsApp vao apenas com numeros.
 
 ## Sequencia Principal Api motorista
 [x] 1. Motorista cria conta usando auth normal.
