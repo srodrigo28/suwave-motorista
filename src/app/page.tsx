@@ -1,9 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getDriverReviewStatus,
+  acceptDriverRideRequest,
+  declineDriverRideRequest,
   loginDriverAccount,
+  listDriverRideRequests,
   pingDriverLocation,
   registerDriverAccount,
   saveDriverCnh,
@@ -14,8 +18,15 @@ import {
   setDriverOnline,
   submitDriverReview,
   uploadDriverImage,
-  type UploadResult,
+  type DriverRideRequest,
 } from "@/services/driver-client";
+import {
+  useDriverFlowStore,
+  type DriverSignupForm,
+  type VehicleBrandOption,
+  type VehicleForm,
+  type VehicleUploads,
+} from "@/stores/driver-flow-store";
 
 type Screen =
   | "login"
@@ -30,35 +41,8 @@ type Screen =
   | "vehicle-photos"
   | "vehicle-review";
 
-const primarySteps = ["1", "2", "3"];
+const primarySteps = ["1", "2", "3", "4", "5"];
 const vehicleSteps = ["1", "2", "3", "4"];
-
-type VehicleBrandOption = {
-  codigo: string;
-  nome: string;
-};
-
-type DriverSignupForm = {
-  birth_date: string;
-  confirm_password: string;
-  cpf: string;
-  email: string;
-  full_name: string;
-  password: string;
-  whatsapp: string;
-};
-
-type VehicleForm = {
-  model: string;
-  plate: string;
-};
-
-type VehicleUploads = {
-  front?: UploadResult;
-  interior?: UploadResult;
-  rear?: UploadResult;
-  side?: UploadResult;
-};
 
 const fallbackBrands: VehicleBrandOption[] = [
   { codigo: "gm", nome: "Chevrolet" },
@@ -153,6 +137,13 @@ function Icon({ name }: { name: string }) {
           <circle cx="12" cy="12" r="2.5" />
         </svg>
       );
+    case "arrow-left":
+      return (
+        <svg {...common}>
+          <path d="M19 12H5" />
+          <path d="m12 5-7 7 7 7" />
+        </svg>
+      );
     case "user":
       return (
         <svg {...common}>
@@ -174,6 +165,21 @@ function Icon({ name }: { name: string }) {
           <rect height="14" rx="2" width="18" x="3" y="5" />
           <circle cx="8" cy="11" r="2" />
           <path d="M6 16a3 3 0 0 1 4 0M13 10h5M13 14h4" />
+        </svg>
+      );
+    case "briefcase":
+      return (
+        <svg {...common}>
+          <path d="M9 6V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1" />
+          <rect height="14" rx="2" width="18" x="3" y="6" />
+          <path d="M3 12h18M10 12v2h4v-2" />
+        </svg>
+      );
+    case "pix":
+      return (
+        <svg {...common}>
+          <path d="m12 3 9 9-9 9-9-9 9-9Z" />
+          <path d="m8 12 4-4 4 4-4 4-4-4Z" />
         </svg>
       );
     case "phone":
@@ -278,7 +284,7 @@ function Progress({
   labels?: string[];
 }) {
   return (
-    <div className="progress">
+    <div className="progress" style={{ "--steps": total.length } as React.CSSProperties}>
       {total.map((step, index) => {
         const done = index + 1 < current;
         const active = index + 1 === current;
@@ -336,6 +342,70 @@ function Field({
   );
 }
 
+function SelectField({
+  icon,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  icon: string;
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<{ icon: string; label: string; value: string }>;
+  value: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find((option) => option.value === value);
+
+  return (
+    <div className={`field select-field ${isOpen ? "select-field-open" : ""}`}>
+      <span className="field-icon">
+        <Icon name={icon} />
+      </span>
+      <button
+        aria-expanded={isOpen}
+        className={selectedOption ? "select-trigger has-value" : "select-trigger"}
+        onClick={() => setIsOpen((open) => !open)}
+        type="button"
+      >
+        {selectedOption?.label ?? label}
+      </button>
+      <button
+        aria-label={isOpen ? "Fechar opções" : "Abrir opções"}
+        className="select-chevron"
+        onClick={() => setIsOpen((open) => !open)}
+        type="button"
+      >
+        ⌄
+      </button>
+      {isOpen ? (
+        <div className="select-content" role="listbox">
+          {options.map((option) => (
+            <button
+              aria-selected={value === option.value}
+              className={value === option.value ? "select-option selected" : "select-option"}
+              key={option.value}
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              role="option"
+              type="button"
+            >
+              <i aria-hidden="true">
+                <Icon name={option.icon} />
+              </i>
+              <span>{option.label}</span>
+              {value === option.value ? <b aria-hidden="true">✓</b> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
 }
@@ -365,6 +435,23 @@ function maskCpf(value: string) {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
+function maskCnpj(value: string) {
+  const digits = onlyDigits(value).slice(0, 14);
+  if (digits.length <= 2) {
+    return digits;
+  }
+  if (digits.length <= 5) {
+    return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  }
+  if (digits.length <= 8) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  }
+  if (digits.length <= 12) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  }
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
+
 function maskPhone(value: string) {
   const digits = onlyDigits(value).slice(0, 11);
   if (digits.length <= 2) {
@@ -384,20 +471,33 @@ function maskedDateToIso(value: string) {
   const day = digits.slice(0, 2);
   const month = digits.slice(2, 4);
   const year = digits.slice(4, 8);
+  const date = new Date(`${year}-${month}-${day}T00:00:00`);
+
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() + 1 !== Number(month) ||
+    date.getDate() !== Number(day)
+  ) {
+    return "";
+  }
+
   return `${year}-${month}-${day}`;
 }
 
 function ActionButton({
   children,
+  disabled = false,
   onClick,
   secondary = false,
 }: {
   children: React.ReactNode;
+  disabled?: boolean;
   onClick: () => void;
   secondary?: boolean;
 }) {
   return (
-    <button className={secondary ? "action secondary" : "action"} onClick={onClick} type="button">
+    <button className={secondary ? "action secondary" : "action"} disabled={disabled} onClick={onClick} type="button">
       {children}
       <span aria-hidden="true">{secondary ? "›" : "→"}</span>
     </button>
@@ -474,117 +574,197 @@ function Login({
 function Signup({
   form,
   go,
-  onAuthenticated,
   setForm,
+  setSignupStep,
+  signupStep,
 }: {
   form: DriverSignupForm;
   go: (screen: Screen) => void;
-  onAuthenticated: (token: string) => void;
   setForm: (form: DriverSignupForm) => void;
+  setSignupStep: (step: number) => void;
+  signupStep: number;
 }) {
   const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function updateField(field: keyof DriverSignupForm, value: string) {
+  function updateField(field: keyof DriverSignupForm, value: string | boolean) {
     setForm({ ...form, [field]: value });
   }
 
-  async function handleContinue() {
+  function validateAccountStep() {
     setError("");
+    if (!form.full_name.trim()) {
+      setError("Informe seu nome completo.");
+      return false;
+    }
+    if (!form.birth_date.trim()) {
+      setError("Informe sua data de nascimento.");
+      return false;
+    }
+    if (!form.email.trim()) {
+      setError("Informe seu e-mail.");
+      return false;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setError("Informe um e-mail válido.");
+      return false;
+    }
+    if (!form.password.trim()) {
+      setError("Informe uma senha.");
+      return false;
+    }
+    if (form.password.length < 6) {
+      setError("A senha precisa ter pelo menos 6 caracteres.");
+      return false;
+    }
     if (form.password !== form.confirm_password) {
       setError("As senhas precisam ser iguais.");
-      return;
+      return false;
     }
     const birthDateIso = maskedDateToIso(form.birth_date);
-    const cpf = onlyDigits(form.cpf);
-    const whatsapp = onlyDigits(form.whatsapp);
 
-    if (form.birth_date && !birthDateIso) {
+    if (!birthDateIso) {
       setError("Informe a data no formato DD/MM/AAAA.");
+      return false;
+    }
+
+    return true;
+  }
+
+  function handleNextSignupStep() {
+    if (validateAccountStep()) {
+      setSignupStep(2);
+    }
+  }
+
+  function handleContinue() {
+    if (!validateAccountStep()) {
       return;
     }
+
+    setError("");
+    const cpf = onlyDigits(form.cpf);
+    const cnpj = onlyDigits(form.cnpj);
+    const whatsapp = onlyDigits(form.whatsapp);
+
     if (cpf.length !== 11) {
       setError("Informe um CPF com 11 números.");
+      return;
+    }
+    if (cnpj.length !== 14) {
+      setError("Informe um CNPJ com 14 números.");
       return;
     }
     if (whatsapp.length < 10) {
       setError("Informe um WhatsApp com DDD.");
       return;
     }
-
-    setIsSubmitting(true);
-    try {
-      const session = await registerDriverAccount({
-        birth_date: birthDateIso || undefined,
-        cpf,
-        email: form.email.trim().toLowerCase(),
-        full_name: form.full_name,
-        password: form.password,
-        whatsapp,
-      });
-      localStorage.setItem("suwave-driver-token", session.access_token);
-      onAuthenticated(session.access_token);
-      await saveDriverProfile(session.access_token, {
-        birth_date: birthDateIso || undefined,
-        cpf,
-        email: form.email.trim().toLowerCase(),
-        full_name: form.full_name,
-        phone: whatsapp,
-      });
-      go("face");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível salvar o cadastro.");
-    } finally {
-      setIsSubmitting(false);
+    if (!form.pix_key_type) {
+      setError("Selecione o tipo da chave Pix.");
+      return;
     }
+    if (!form.pix_account.trim()) {
+      setError("Informe a conta Pix.");
+      return;
+    }
+    if (!form.accepted_terms) {
+      setError("Aceite os termos para continuar.");
+      return;
+    }
+
+    go("face");
   }
 
   return (
     <section className="scroll-screen">
       <BrandLockup compact />
-      <Progress current={1} total={primarySteps} />
-      <p className="step-label">1 de 3</p>
+      <Progress current={signupStep} total={primarySteps} />
+      <p className="step-label">{signupStep} de 5</p>
       <h1>Cadastro do motorista</h1>
-      <p className="subtitle">Preencha seus dados</p>
+      <p className="subtitle">{signupStep === 1 ? "Dados de acesso" : "Dados de contato e Pix"}</p>
       <div className="form-stack">
-        <Field icon="user" label="Nome completo" onChange={(value) => updateField("full_name", value)} value={form.full_name} />
-        <Field
-          icon="calendar"
-          inputMode="numeric"
-          label="DD/MM/AAAA"
-          maxLength={10}
-          onChange={(value) => updateField("birth_date", maskDate(value))}
-          value={form.birth_date}
-        />
-        <Field
-          icon="id"
-          inputMode="numeric"
-          label="CPF"
-          maxLength={14}
-          onChange={(value) => updateField("cpf", maskCpf(value))}
-          value={form.cpf}
-        />
-        <Field icon="mail" label="E-mail" onChange={(value) => updateField("email", value)} type="email" value={form.email} />
-        <Field
-          icon="phone"
-          inputMode="tel"
-          label="WhatsApp"
-          maxLength={15}
-          onChange={(value) => updateField("whatsapp", maskPhone(value))}
-          value={form.whatsapp}
-        />
-        <Field icon="lock" label="Senha" onChange={(value) => updateField("password", value)} secure value={form.password} />
-        <Field
-          icon="lock"
-          label="Confirmar senha"
-          onChange={(value) => updateField("confirm_password", value)}
-          secure
-          value={form.confirm_password}
-        />
+        {signupStep === 1 ? (
+          <>
+            <Field icon="user" label="Nome completo" onChange={(value) => updateField("full_name", value)} value={form.full_name} />
+            <Field
+              icon="calendar"
+              inputMode="numeric"
+              label="Data de nascimento"
+              maxLength={10}
+              onChange={(value) => updateField("birth_date", maskDate(value))}
+              value={form.birth_date}
+            />
+            <Field icon="mail" label="E-mail" onChange={(value) => updateField("email", value)} type="email" value={form.email} />
+            <Field icon="lock" label="Senha" onChange={(value) => updateField("password", value)} secure value={form.password} />
+            <Field
+              icon="lock"
+              label="Confirmar senha"
+              onChange={(value) => updateField("confirm_password", value)}
+              secure
+              value={form.confirm_password}
+            />
+          </>
+        ) : (
+          <>
+            <Field
+              icon="phone"
+              inputMode="tel"
+              label="WhatsApp"
+              maxLength={15}
+              onChange={(value) => updateField("whatsapp", maskPhone(value))}
+              value={form.whatsapp}
+            />
+            <Field
+              icon="briefcase"
+              inputMode="numeric"
+              label="CNPJ"
+              maxLength={18}
+              onChange={(value) => updateField("cnpj", maskCnpj(value))}
+              value={form.cnpj}
+            />
+            <Field
+              icon="id"
+              inputMode="numeric"
+              label="CPF"
+              maxLength={14}
+              onChange={(value) => updateField("cpf", maskCpf(value))}
+              value={form.cpf}
+            />
+            <SelectField
+              icon="pix"
+              label="Selecione tipo Pix"
+              onChange={(value) => updateField("pix_key_type", value)}
+              options={[
+                { label: "E-mail", value: "email", icon: "mail" },
+                { label: "Telefone", value: "phone", icon: "phone" },
+                { label: "CNPJ", value: "cnpj", icon: "briefcase" },
+                { label: "Chave aleatória", value: "random", icon: "spark" },
+              ]}
+              value={form.pix_key_type}
+            />
+            <Field
+              icon="pix"
+              label="Conta Pix"
+              onChange={(value) => updateField("pix_account", value)}
+              value={form.pix_account}
+            />
+            <label className="terms-check">
+              <input
+                checked={form.accepted_terms}
+                onChange={(event) => updateField("accepted_terms", event.target.checked)}
+                type="checkbox"
+              />
+              <span>Aceito os termos de uso e as regras do Motorista SUWAVE.</span>
+            </label>
+          </>
+        )}
       </div>
       {error ? <p className="form-error">{error}</p> : null}
-      <ActionButton onClick={handleContinue}>{isSubmitting ? "Salvando..." : "Continuar"}</ActionButton>
-      <button className="plain-back" onClick={() => go("login")} type="button">
+      {signupStep === 1 ? (
+        <ActionButton onClick={handleNextSignupStep}>Continuar</ActionButton>
+      ) : (
+        <ActionButton onClick={handleContinue}>Continuar</ActionButton>
+      )}
+      <button className="plain-back" onClick={() => (signupStep === 1 ? go("login") : setSignupStep(1))} type="button">
         Voltar
       </button>
     </section>
@@ -592,43 +772,66 @@ function Signup({
 }
 
 function FacePhoto({
+  faceFile,
   go,
-  token,
+  onBack,
+  setFaceFile,
 }: {
+  faceFile?: File;
   go: (screen: Screen) => void;
-  token?: string;
+  onBack: () => void;
+  setFaceFile: (file: File) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
 
-  async function handleFaceFile(file?: File) {
-    if (!file || !token) {
-      setError("Entre ou cadastre-se antes de enviar a foto.");
+  function handleFaceFile(file?: File) {
+    if (!file) {
+      setError("Selecione uma foto do rosto para continuar.");
       return;
     }
 
-    setIsUploading(true);
     setError("");
-    try {
-      const upload = await uploadDriverImage(token, file, "driver_face");
-      await saveDriverFacePhoto(token, upload);
-      go("cnh");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível enviar a foto.");
-    } finally {
-      setIsUploading(false);
+    setFaceFile(file);
+  }
+
+  function handleNext() {
+    if (!faceFile) {
+      setError("Selecione uma foto do rosto para continuar.");
+      return;
     }
+
+    setError("");
+    go("cnh");
   }
 
   return (
     <section className="scroll-screen face-screen">
-      <button className="icon-back" onClick={() => go("signup")} type="button">
-        ←
-      </button>
+      <header className="face-flow-header">
+        <button aria-label="Voltar" onClick={onBack} type="button">
+          <Icon name="arrow-left" />
+        </button>
+        <p>Cadastro do motorista</p>
+        <span aria-hidden="true" />
+      </header>
+      <p className="step-label strong">3 de 5</p>
+      <Progress current={3} total={primarySteps} />
       <h1>Validar foto do rosto</h1>
       <p className="subtitle">Tire uma foto nitida do seu rosto</p>
-      <div className="face-card">
+      <button
+        aria-label="Abrir câmera para tirar foto do rosto"
+        className="face-card"
+        onClick={() => fileInputRef.current?.click()}
+        type="button"
+      >
+        <Image
+          alt="Modelo de posicionamento correto do rosto"
+          className="face-reference-photo"
+          height={1024}
+          priority
+          src="/face-validation-model.png"
+          width={1024}
+        />
         <span className="tip left">
           <Icon name="spark" /> Boa iluminação
         </span>
@@ -636,23 +839,13 @@ function FacePhoto({
           <Icon name="user" /> Rosto centralizado
         </span>
         <div className="face-oval" />
-        <div className="avatar-face">
-          <i className="hair" />
-          <i className="head" />
-          <i className="neck" />
-          <i className="shirt" />
-          <i className="eye left-eye" />
-          <i className="eye right-eye" />
-          <i className="nose" />
-          <i className="mouth" />
-        </div>
         <span className="tip bottom">
           <Icon name="ban" /> Sem acessórios que cubram o rosto
         </span>
-      </div>
+      </button>
       <div className="success-line">
         <span>✓</span>
-        Foto válida! Sua foto está nitida e bem enquadrada.
+        Foto válida! Sua foto está nítida e bem enquadrada.
       </div>
       <input
         accept="image/*"
@@ -663,11 +856,8 @@ function FacePhoto({
         type="file"
       />
       {error ? <p className="form-error">{error}</p> : null}
-      <button className="action camera-action" onClick={() => fileInputRef.current?.click()} type="button">
-        <Icon name="camera" />
-        {isUploading ? "Enviando..." : "Abrir câmera"}
-      </button>
-      <ActionButton onClick={() => go("face")} secondary>
+      <ActionButton onClick={handleNext}>Próximo</ActionButton>
+      <ActionButton onClick={() => fileInputRef.current?.click()} secondary>
         Tentar novamente
       </ActionButton>
       <p className="security">▣ Suas fotos são protegidas e usadas apenas para verificação de segurança.</p>
@@ -678,62 +868,98 @@ function FacePhoto({
 function Cnh({
   cnhBack,
   cnhFront,
+  faceFile,
   go,
+  onAuthenticated,
+  resetFlow,
   setCnhBack,
   setCnhFront,
-  token,
+  signupForm,
 }: {
-  cnhBack?: UploadResult;
-  cnhFront?: UploadResult;
+  cnhBack?: File;
+  cnhFront?: File;
+  faceFile?: File;
   go: (screen: Screen) => void;
-  setCnhBack: (upload: UploadResult) => void;
-  setCnhFront: (upload: UploadResult) => void;
-  token?: string;
+  onAuthenticated: (token: string) => void;
+  resetFlow: () => void;
+  setCnhBack: (file: File) => void;
+  setCnhFront: (file: File) => void;
+  signupForm: DriverSignupForm;
 }) {
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
-  const [uploadingSide, setUploadingSide] = useState<"front" | "back" | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleUpload(file: File | undefined, side: "front" | "back") {
-    if (!file || !token) {
-      setError("Entre ou cadastre-se antes de enviar a CNH.");
+  function handleUpload(file: File | undefined, side: "front" | "back") {
+    if (!file) {
+      setError("Selecione a imagem da CNH.");
       return;
     }
 
-    setUploadingSide(side);
     setError("");
-    try {
-      const upload = await uploadDriverImage(token, file, "driver_cnh");
-      if (side === "front") {
-        setCnhFront(upload);
-      } else {
-        setCnhBack(upload);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível enviar a CNH.");
-    } finally {
-      setUploadingSide(null);
+    if (side === "front") {
+      setCnhFront(file);
+    } else {
+      setCnhBack(file);
     }
   }
 
   async function handleFinish() {
-    if (!token || !cnhFront || !cnhBack) {
+    if (!faceFile) {
+      setError("Envie a foto do rosto antes de finalizar.");
+      return;
+    }
+    if (!cnhFront || !cnhBack) {
       setError("Envie frente e verso da CNH antes de finalizar.");
       return;
     }
 
+    const birthDateIso = maskedDateToIso(signupForm.birth_date);
+    const cpf = onlyDigits(signupForm.cpf);
+    const cnpj = onlyDigits(signupForm.cnpj);
+    const whatsapp = onlyDigits(signupForm.whatsapp);
+
     setIsSubmitting(true);
     setError("");
     try {
-      await saveDriverCnh(token, {
-        cnh_back_file_id: cnhBack.storage_file_id,
-        cnh_back_url: cnhBack.url,
-        cnh_front_file_id: cnhFront.storage_file_id,
-        cnh_front_url: cnhFront.url,
+      const session = await registerDriverAccount({
+        birth_date: birthDateIso || undefined,
+        cpf,
+        email: signupForm.email.trim().toLowerCase(),
+        full_name: signupForm.full_name,
+        password: signupForm.password,
+        whatsapp,
       });
-      await submitDriverReview(token);
+      localStorage.setItem("suwave-driver-token", session.access_token);
+      onAuthenticated(session.access_token);
+
+      await saveDriverProfile(session.access_token, {
+        birth_date: birthDateIso || undefined,
+        cnpj,
+        cpf,
+        email: signupForm.email.trim().toLowerCase(),
+        full_name: signupForm.full_name,
+        phone: whatsapp,
+        pix_account: signupForm.pix_account.trim(),
+        pix_key_type: signupForm.pix_key_type,
+      });
+
+      const faceUpload = await uploadDriverImage(session.access_token, faceFile, "driver_face");
+      await saveDriverFacePhoto(session.access_token, faceUpload);
+
+      const [cnhFrontUpload, cnhBackUpload] = await Promise.all([
+        uploadDriverImage(session.access_token, cnhFront, "driver_cnh"),
+        uploadDriverImage(session.access_token, cnhBack, "driver_cnh"),
+      ]);
+      await saveDriverCnh(session.access_token, {
+        cnh_back_file_id: cnhBackUpload.storage_file_id,
+        cnh_back_url: cnhBackUpload.url,
+        cnh_front_file_id: cnhFrontUpload.storage_file_id,
+        cnh_front_url: cnhFrontUpload.url,
+      });
+      await submitDriverReview(session.access_token);
+      resetFlow();
       go("submitted");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível finalizar o cadastro.");
@@ -745,8 +971,8 @@ function Cnh({
   return (
     <section className="scroll-screen cnh-screen">
       <p className="eyebrow">Cadastro do motorista</p>
-      <p className="step-label strong">3 de 3</p>
-      <Progress current={3} total={primarySteps} />
+      <p className="step-label strong">4 de 5</p>
+      <Progress current={4} total={primarySteps} />
       <h1>Enviar CNH</h1>
       <p className="subtitle">Envie imagens nitidas do documento</p>
       <div className="upload-card">
@@ -756,7 +982,7 @@ function Cnh({
           <b />
           <span />
         </div>
-        <span>{cnhFront ? "✓ Enviado" : "Pendente"}</span>
+        <span>{cnhFront ? "✓ Selecionado" : "Pendente"}</span>
         <input
           accept="image/*,.pdf"
           hidden
@@ -766,7 +992,7 @@ function Cnh({
         />
         <button onClick={() => frontInputRef.current?.click()} type="button">
           <Icon name="camera" />
-          {uploadingSide === "front" ? "Enviando..." : cnhFront ? "Trocar imagem" : "Enviar imagem"}
+          {cnhFront ? "Trocar imagem" : "Enviar imagem"}
         </button>
       </div>
       <div className="upload-card">
@@ -775,7 +1001,7 @@ function Cnh({
           <i />
           <b />
         </div>
-        <span>{cnhBack ? "✓ Enviado" : "Pendente"}</span>
+        <span>{cnhBack ? "✓ Selecionado" : "Pendente"}</span>
         <input
           accept="image/*,.pdf"
           hidden
@@ -785,12 +1011,14 @@ function Cnh({
         />
         <button onClick={() => backInputRef.current?.click()} type="button">
           <Icon name="camera" />
-          {uploadingSide === "back" ? "Enviando..." : cnhBack ? "Trocar imagem" : "Enviar imagem"}
+          {cnhBack ? "Trocar imagem" : "Enviar imagem"}
         </button>
       </div>
       <p className="info-line">ⓘ Verifique se todos os dados estão legíveis</p>
       {error ? <p className="form-error">{error}</p> : null}
-      <ActionButton onClick={handleFinish}>{isSubmitting ? "Finalizando..." : "Finalizar cadastro"}</ActionButton>
+      <ActionButton disabled={isSubmitting} onClick={handleFinish}>
+        {isSubmitting ? "Concluindo..." : "Concluir cadastro"}
+      </ActionButton>
       <ActionButton onClick={() => go("face")} secondary>
         Voltar
       </ActionButton>
@@ -803,6 +1031,8 @@ function Submitted({ go }: { go: (screen: Screen) => void }) {
   return (
     <section className="scroll-screen center-screen">
       <BrandLockup />
+      <Progress current={5} total={primarySteps} />
+      <p className="step-label strong">5 de 5</p>
       <div className="hero-car approved" aria-hidden="true">
         <div className="check">✓</div>
         <div className="town" />
@@ -816,9 +1046,10 @@ function Submitted({ go }: { go: (screen: Screen) => void }) {
         <span>✓ Dados pessoais preenchidos</span>
         <span>✓ Foto do rosto validada</span>
         <span>✓ CNH enviada</span>
+        <span>✓ Cadastro concluído</span>
       </div>
-      <p className="calendar-line">▣ Seu cadastro será analisado em breve.</p>
-      <ActionButton onClick={() => go("status")}>Acompanhar status</ActionButton>
+      <p className="calendar-line">▣ No MVP, a aprovação é simulada em até 10 minutos.</p>
+      <ActionButton onClick={() => go("status")}>Acompanhar aprovação</ActionButton>
       <ActionButton onClick={() => go("login")} secondary>
         Voltar ao login
       </ActionButton>
@@ -826,6 +1057,18 @@ function Submitted({ go }: { go: (screen: Screen) => void }) {
     </section>
   );
 }
+
+const reviewMissingLabels: Record<string, string> = {
+  cnh_back: "verso da CNH",
+  cnh_front: "frente da CNH",
+  cnpj: "CNPJ",
+  cpf: "CPF",
+  email: "e-mail",
+  face_photo: "foto do rosto",
+  full_name: "nome completo",
+  pix_account: "conta Pix",
+  pix_key_type: "tipo de chave Pix",
+};
 
 function Status({
   go,
@@ -837,6 +1080,7 @@ function Status({
   const [secondsLeft, setSecondsLeft] = useState(9 * 60);
   const [statusText, setStatusText] = useState("EM_ANALISE");
   const [error, setError] = useState("");
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const minutesLeft = Math.ceil(secondsLeft / 60);
   const progress = Math.max(0, Math.min(1, secondsLeft / (9 * 60)));
 
@@ -855,6 +1099,7 @@ function Status({
         }
         setStatusText(status.status);
         setSecondsLeft(status.seconds_remaining);
+        setMissingFields(status.missing);
         if (status.approved) {
           go("dashboard");
         }
@@ -900,6 +1145,11 @@ function Status({
       <h1>Cadastro em análise</h1>
       <p className="subtitle">Estamos verificando seus dados. No MVP, a aprovação é simulada em até 10 minutos.</p>
       {error ? <p className="form-error">{error}</p> : null}
+      {missingFields.length ? (
+        <p className="form-error">
+          Pendências: {missingFields.map((field) => reviewMissingLabels[field] ?? field).join(", ")}.
+        </p>
+      ) : null}
       <div className="checklist">
         <span>✓ Telefone confirmado</span>
         <span>✓ Foto recebida</span>
@@ -938,10 +1188,31 @@ async function sendCurrentDriverLocation(token: string) {
   });
 }
 
+function formatRideDistance(distance?: number | null) {
+  if (distance == null) {
+    return "Distância não calculada";
+  }
+  if (distance < 1000) {
+    return `${distance} m`;
+  }
+  return `${(distance / 1000).toFixed(1).replace(".", ",")} km`;
+}
+
+function formatRideTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Agora";
+  }
+  return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
 function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string }) {
   const [isOnline, setIsOnline] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rideRequests, setRideRequests] = useState<DriverRideRequest[]>([]);
+  const [busyRideId, setBusyRideId] = useState<string | null>(null);
+  const [rideFeedback, setRideFeedback] = useState("");
 
   useEffect(() => {
     if (!isOnline || !token) {
@@ -969,6 +1240,36 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
     };
   }, [isOnline, token]);
 
+  useEffect(() => {
+    if (!isOnline || !token) {
+      return;
+    }
+
+    const activeToken = token;
+    let cancelled = false;
+
+    async function syncRideRequests() {
+      try {
+        const requests = await listDriverRideRequests(activeToken);
+        if (!cancelled) {
+          setRideRequests(requests);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRideFeedback(err instanceof Error ? err.message : "Não foi possível buscar corridas.");
+        }
+      }
+    }
+
+    syncRideRequests();
+    const interval = window.setInterval(syncRideRequests, 10000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isOnline, token]);
+
   async function handleToggleOnline() {
     if (!token) {
       setError("Entre novamente para ficar online.");
@@ -981,6 +1282,7 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
       if (isOnline) {
         const availability = await setDriverOffline(token);
         setIsOnline(availability.is_online);
+        setRideRequests([]);
         return;
       }
 
@@ -991,6 +1293,28 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
       setError(err instanceof Error ? err.message : "Não foi possível alterar sua disponibilidade.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleRideAction(rideRequestId: string, action: "accept" | "decline") {
+    if (!token) {
+      setRideFeedback("Entre novamente para responder a corrida.");
+      return;
+    }
+
+    setBusyRideId(rideRequestId);
+    setRideFeedback("");
+    try {
+      const updated =
+        action === "accept"
+          ? await acceptDriverRideRequest(token, rideRequestId)
+          : await declineDriverRideRequest(token, rideRequestId);
+      setRideRequests((requests) => requests.filter((request) => request.id !== rideRequestId));
+      setRideFeedback(updated.status === "ACEITA" ? "Corrida aceita." : "Corrida recusada.");
+    } catch (err) {
+      setRideFeedback(err instanceof Error ? err.message : "Não foi possível responder a corrida.");
+    } finally {
+      setBusyRideId(null);
     }
   }
 
@@ -1016,6 +1340,53 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
           <div className="mini-car" />
         </div>
         {error ? <p className="form-error">{error}</p> : null}
+        {rideRequests.length ? (
+          <div className="ride-request-stack">
+            {rideRequests.slice(0, 2).map((rideRequest) => (
+              <article className="ride-request-card" key={rideRequest.id}>
+                <div>
+                  <span>Nova corrida</span>
+                  <strong>{rideRequest.passenger_name ?? "Passageiro SUWAVE"}</strong>
+                  <p>
+                    {rideRequest.origin_label ?? "Origem enviada pelo passageiro"}
+                    {rideRequest.destination_label ? ` → ${rideRequest.destination_label}` : ""}
+                  </p>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Distância</dt>
+                    <dd>{formatRideDistance(rideRequest.distance_meters)}</dd>
+                  </div>
+                  <div>
+                    <dt>Pedido</dt>
+                    <dd>{formatRideTime(rideRequest.requested_at)}</dd>
+                  </div>
+                  <div>
+                    <dt>Lugares</dt>
+                    <dd>{rideRequest.requested_seats}</dd>
+                  </div>
+                </dl>
+                <div className="ride-actions">
+                  <button
+                    disabled={busyRideId === rideRequest.id}
+                    onClick={() => handleRideAction(rideRequest.id, "decline")}
+                    type="button"
+                  >
+                    Recusar
+                  </button>
+                  <button
+                    disabled={busyRideId === rideRequest.id}
+                    onClick={() => handleRideAction(rideRequest.id, "accept")}
+                    type="button"
+                  >
+                    {busyRideId === rideRequest.id ? "Enviando..." : "Aceitar"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {rideFeedback ? <p className="ride-feedback">{rideFeedback}</p> : null}
         <ActionButton onClick={handleToggleOnline}>
           {isSubmitting ? "Atualizando..." : isOnline ? "Ficar offline" : "Online"}
         </ActionButton>
@@ -1402,6 +1773,7 @@ function VehicleReview({
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("login");
+  const [signupStep, setSignupStep] = useState(1);
   const [showSplash, setShowSplash] = useState(true);
   const [driverToken, setDriverToken] = useState<string | undefined>(() => {
     if (typeof window === "undefined") {
@@ -1409,42 +1781,71 @@ export default function Home() {
     }
     return localStorage.getItem("suwave-driver-token") ?? undefined;
   });
-  const [signupForm, setSignupForm] = useState<DriverSignupForm>({
-    birth_date: "",
-    confirm_password: "",
-    cpf: "",
-    email: "",
-    full_name: "",
-    password: "",
-    whatsapp: "",
-  });
-  const [cnhFront, setCnhFront] = useState<UploadResult>();
-  const [cnhBack, setCnhBack] = useState<UploadResult>();
-  const [selectedBrand, setSelectedBrand] = useState<VehicleBrandOption | null>(null);
-  const [vehicleForm, setVehicleForm] = useState<VehicleForm>({ model: "", plate: "" });
-  const [vehicleUploads, setVehicleUploads] = useState<VehicleUploads>({});
+  const signupForm = useDriverFlowStore((state) => state.signupForm);
+  const setSignupForm = useDriverFlowStore((state) => state.setSignupForm);
+  const cnhFront = useDriverFlowStore((state) => state.cnhFront);
+  const setCnhFront = useDriverFlowStore((state) => state.setCnhFront);
+  const cnhBack = useDriverFlowStore((state) => state.cnhBack);
+  const setCnhBack = useDriverFlowStore((state) => state.setCnhBack);
+  const faceFile = useDriverFlowStore((state) => state.faceFile);
+  const setFaceFile = useDriverFlowStore((state) => state.setFaceFile);
+  const selectedBrand = useDriverFlowStore((state) => state.selectedBrand);
+  const setSelectedBrand = useDriverFlowStore((state) => state.setSelectedBrand);
+  const vehicleForm = useDriverFlowStore((state) => state.vehicleForm);
+  const setVehicleForm = useDriverFlowStore((state) => state.setVehicleForm);
+  const vehicleUploads = useDriverFlowStore((state) => state.vehicleUploads);
+  const setVehicleUploads = useDriverFlowStore((state) => state.setVehicleUploads);
+  const resetFlow = useDriverFlowStore((state) => state.resetFlow);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 2300);
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    localStorage.removeItem("suwave-driver-flow");
+    localStorage.removeItem("suwave-driver-flow-v2");
+    localStorage.removeItem("suwave-driver-finance-draft");
+    resetFlow();
+  }, [resetFlow]);
+
   const content = useMemo(() => {
     const go = setScreen;
     switch (screen) {
       case "signup":
-        return <Signup form={signupForm} go={go} onAuthenticated={setDriverToken} setForm={setSignupForm} />;
+        return (
+          <Signup
+            form={signupForm}
+            go={go}
+            setForm={setSignupForm}
+            setSignupStep={setSignupStep}
+            signupStep={signupStep}
+          />
+        );
       case "face":
-        return <FacePhoto go={go} token={driverToken} />;
+        return (
+          <FacePhoto
+            faceFile={faceFile}
+            go={go}
+            onBack={() => {
+              setSignupStep(2);
+              go("signup");
+            }}
+            setFaceFile={setFaceFile}
+          />
+        );
       case "cnh":
         return (
           <Cnh
             cnhBack={cnhBack}
             cnhFront={cnhFront}
+            faceFile={faceFile}
             go={go}
+            onAuthenticated={setDriverToken}
+            resetFlow={resetFlow}
             setCnhBack={setCnhBack}
             setCnhFront={setCnhFront}
-            token={driverToken}
+            signupForm={signupForm}
           />
         );
       case "submitted":
@@ -1479,7 +1880,27 @@ export default function Home() {
       default:
         return <Login go={go} onAuthenticated={setDriverToken} />;
     }
-  }, [cnhBack, cnhFront, driverToken, screen, selectedBrand, signupForm, vehicleForm, vehicleUploads]);
+  }, [
+    cnhBack,
+    cnhFront,
+    driverToken,
+    faceFile,
+    resetFlow,
+    screen,
+    selectedBrand,
+    setCnhBack,
+    setCnhFront,
+    setFaceFile,
+    setSelectedBrand,
+    setSignupForm,
+    setSignupStep,
+    setVehicleForm,
+    setVehicleUploads,
+    signupForm,
+    signupStep,
+    vehicleForm,
+    vehicleUploads,
+  ]);
 
   return (
     <main className={`stage ${showSplash ? "splash-active" : ""}`}>

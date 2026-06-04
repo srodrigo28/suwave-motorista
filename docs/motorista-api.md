@@ -1,6 +1,6 @@
 # Motorista API
 
-Total de rotas documentadas: 23
+Total de rotas documentadas: 31
 
 Status inicial:
 
@@ -33,19 +33,126 @@ O app `motorista` usa a API principal em Flask, no padrao:
 Base da API:
 
 ```text
-/api/v1
+https://99dev.pro/suwave-api/api/v1
 ```
 
-## Mascaras dos Campos
+Configuracao do app motorista:
 
+```text
+NEXT_PUBLIC_API_BASE_URL=https://99dev.pro/suwave-api
+```
+
+O cliente normaliza a URL: se a variavel vier sem `/api/v1`, o prefixo e adicionado automaticamente. O app motorista usa a API principal do projeto e nao depende de API interna do Next nem de backend local.
+
+## Mascaras dos Campos
 [x] Nome completo sem mascara, texto livre.
 [x] Data de nascimento com mascara `DD/MM/AAAA`.
 [x] CPF com mascara `000.000.000-00`.
+[x] CNPJ com mascara `00.000.000/0000-00`.
 [x] WhatsApp com mascara `(00) 00000-0000`.
 [x] E-mail em campo de e-mail.
 [x] Senha e confirmar senha em campo protegido.
+[x] Tipo de chave Pix em select: e-mail, telefone, CNPJ ou chave aleatoria.
+[x] Conta Pix em campo livre, de acordo com o tipo selecionado.
 [x] Antes de enviar para API, data vira `AAAA-MM-DD`.
 [x] Antes de enviar para API, CPF e WhatsApp vao apenas com numeros.
+[x] Antes de enviar para API, CNPJ vai apenas com numeros.
+
+## Cadastro Motorista em Steps
+
+O app motorista usa a tela principal:
+
+```text
+app/motorista/src/app/page.tsx
+```
+
+O estado temporario do fluxo fica centralizado em Zustand:
+
+```text
+app/motorista/src/stores/driver-flow-store.ts
+```
+
+Esse estado existe somente em memoria enquanto o app esta aberto, permitindo que o motorista navegue para frente e para tras sem precisar digitar os dados novamente. Recarregar ou reabrir o app limpa o rascunho.
+
+Dados sensiveis e arquivos nao ficam persistidos no `localStorage`:
+
+- dados pessoais, senha e confirmacao ficam somente no estado em memoria;
+- foto de rosto e imagens da CNH ficam somente no estado em memoria;
+- dados antigos das chaves `suwave-driver-flow`, `suwave-driver-flow-v2` e `suwave-driver-finance-draft` sao limpos ao abrir o app.
+
+O cadastro inicial do motorista usa 5 etapas principais para deixar o preenchimento mais claro sem remover o fluxo existente.
+
+### Step 1 - Dados de acesso
+
+Campos:
+
+- nome completo;
+- data de nascimento;
+- e-mail;
+- senha;
+- confirmar senha.
+
+Validacoes antes de ir para o step 2:
+
+- nome obrigatorio;
+- data obrigatoria e valida em `DD/MM/AAAA`;
+- e-mail obrigatorio;
+- senha obrigatoria;
+- senha e confirmar senha iguais.
+
+### Step 2 - Contato, documento e Pix
+
+Campos:
+
+- WhatsApp;
+- CNPJ;
+- CPF;
+- selecione tipo Pix;
+- conta Pix.
+
+Opcoes do tipo Pix:
+
+- e-mail;
+- telefone;
+- CNPJ;
+- chave aleatoria.
+
+Validacoes antes de criar a conta:
+
+- WhatsApp com DDD;
+- CPF com 11 digitos;
+- CNPJ com 14 digitos;
+- tipo Pix selecionado;
+- conta Pix preenchida.
+
+Observacao importante:
+
+- A API atual persiste no cadastro do motorista: nome, e-mail, telefone/WhatsApp, CPF, CNPJ, data de nascimento e dados Pix.
+- CNPJ e dados Pix ficam em memoria somente durante o preenchimento e sao enviados para `/driver/profile` ao concluir o cadastro.
+- O envio para `/auth/register` e `/driver/profile` nao acontece nessa etapa.
+
+### Step 3 - Foto de rosto
+
+Seleciona a foto de rosto e guarda o arquivo no contexto local do fluxo. O upload real ainda nao acontece aqui.
+
+### Step 4 - CNH
+
+Seleciona frente e verso da CNH e guarda os arquivos no contexto local do fluxo.
+
+Ao clicar em `Concluir cadastro`, o app executa a criacao real em sequencia:
+
+1. cria usuario em `/auth/register`;
+2. salva perfil em `/driver/profile`;
+3. envia foto de rosto com contexto `driver_face`;
+4. vincula foto em `/driver/photo/face`;
+5. envia frente e verso da CNH com contexto `driver_cnh`;
+6. vincula CNH em `/driver/documents/cnh`;
+7. envia cadastro para analise em `/driver/submit-review`;
+8. limpa o contexto local do cadastro.
+
+### Step 5 - Resumo do cadastro
+
+Exibe a confirmacao final com o resumo dos dados pessoais, foto do rosto e CNH enviados. O botao principal informa `Acompanhar aprovacao` e permite acessar o acompanhamento do status.
 
 ## Sequencia Principal Api motorista
 [x] 1. Motorista cria conta usando auth normal.
@@ -67,6 +174,13 @@ Base da API:
 [x] 17. Enquanto online, app envia ping periodico em `/driver/location/ping`.
 [x] 18. Modulo de carona busca motoristas disponiveis em `/driver/available`.
 [x] 19. Admin acompanha e revisa motoristas em `/admin/drivers`.
+[x] 20. Passageiro cria solicitacao real de corrida em `/driver/ride-requests`.
+[x] 21. API vincula a solicitacao ao motorista online mais proximo.
+[x] 22. Motorista lista corridas recebidas em `GET /driver/ride-requests`.
+[x] 23. Motorista aceita ou recusa em `/driver/ride-requests/{ride_request_id}/accept|decline`.
+[x] 24. Passageiro avalia corrida aceita em `/driver/ride-requests/{ride_request_id}/rating`.
+[x] 25. Admin aprova, recusa ou solicita ajuste do veiculo separadamente.
+[x] 26. Perfil do motorista persiste CNPJ, tipo de chave Pix e conta Pix.
 
 ## Rotas de Cadastro e Auth
 
@@ -212,7 +326,10 @@ Payload:
   "email": "sebastiao@example.com",
   "phone": "66999990000",
   "cpf": "12345678901",
-  "birth_date": "1988-01-10"
+  "cnpj": "12345678000190",
+  "birth_date": "1988-01-10",
+  "pix_key_type": "cnpj",
+  "pix_account": "12345678000190"
 }
 ```
 
@@ -241,7 +358,10 @@ Payload:
   "email": "sebastiao.silva@example.com",
   "phone": "66999991111",
   "cpf": "12345678901",
-  "birth_date": "1988-01-10"
+  "cnpj": "12345678000191",
+  "birth_date": "1988-01-10",
+  "pix_key_type": "cnpj",
+  "pix_account": "12345678000191"
 }
 ```
 
@@ -451,7 +571,7 @@ Protegida por JWT.
 Requisitos:
 
 - motorista aprovado;
-- veiculo cadastrado;
+- veiculo cadastrado e aprovado;
 - localizacao atual enviada.
 
 Resposta:
@@ -506,6 +626,9 @@ Requisitos iniciais:
 - nome completo;
 - e-mail;
 - CPF;
+- CNPJ;
+- tipo de chave Pix;
+- conta Pix;
 - foto de rosto;
 - CNH frente;
 - CNH verso.
@@ -545,7 +668,7 @@ approved_at = agora
 
 ## Rotas Admin de Motorista
 
-Total: 6
+Total: 9
 
 Todas as rotas abaixo usam prefixo:
 
@@ -648,6 +771,173 @@ Efeito:
 - `is_online = false`;
 - salva motivo.
 
+### 24. Aprovar veiculo do motorista
+
+```text
+POST /api/v1/admin/drivers/{driver_id}/vehicles/{vehicle_id}/approve
+```
+
+Efeito:
+
+- valida que o veiculo pertence ao motorista informado;
+- muda `driver_vehicles.status` para `APROVADO`;
+- libera o veiculo para o motorista ficar online.
+
+### 25. Recusar veiculo do motorista
+
+```text
+POST /api/v1/admin/drivers/{driver_id}/vehicles/{vehicle_id}/reject
+```
+
+Payload:
+
+```json
+{
+  "reason": "Placa divergente."
+}
+```
+
+Efeito:
+
+- valida que o veiculo pertence ao motorista informado;
+- muda `driver_vehicles.status` para `RECUSADO`;
+- tira o motorista de online se ele estiver online;
+- salva a observacao em `driver_profiles.rejection_reason`.
+
+### 26. Solicitar ajuste do veiculo
+
+```text
+POST /api/v1/admin/drivers/{driver_id}/vehicles/{vehicle_id}/request-documents
+```
+
+Payload:
+
+```json
+{
+  "reason": "Reenviar fotos do veiculo com mais nitidez."
+}
+```
+
+Efeito:
+
+- valida que o veiculo pertence ao motorista informado;
+- muda `driver_vehicles.status` para `PENDENTE_DOCUMENTO`;
+- tira o motorista de online se ele estiver online;
+- salva a observacao em `driver_profiles.rejection_reason`.
+
+## Rotas de Corrida e Reputacao
+
+Total: 5
+
+Todas as rotas abaixo usam prefixo:
+
+```text
+/api/v1/driver
+```
+
+### 27. Criar solicitacao de corrida
+
+```text
+POST /api/v1/driver/ride-requests
+```
+
+Usado pelo passageiro logado para criar uma solicitacao real de corrida/carona.
+
+Payload minimo:
+
+```json
+{
+  "origin_latitude": -15.6009,
+  "origin_longitude": -56.0969
+}
+```
+
+Payload completo:
+
+```json
+{
+  "origin_latitude": -15.6009,
+  "origin_longitude": -56.0969,
+  "destination_latitude": -15.61,
+  "destination_longitude": -56.11,
+  "origin_label": "Praca Central",
+  "destination_label": "Rodoviaria",
+  "passenger_name": "Ana Silva",
+  "passenger_phone": "66999990000",
+  "requested_seats": 2
+}
+```
+
+Efeito:
+
+- busca motoristas aprovados, online e com localizacao recente;
+- calcula distancia entre origem e motorista;
+- vincula a solicitacao ao motorista mais proximo;
+- retorna `PROCURANDO` quando encontrou motorista;
+- retorna `SEM_MOTORISTA` quando nao ha motorista disponivel.
+
+### 28. Listar corridas recebidas pelo motorista
+
+```text
+GET /api/v1/driver/ride-requests
+```
+
+Retorna as solicitacoes pendentes (`PROCURANDO`) vinculadas ao motorista logado.
+
+### 29. Aceitar corrida
+
+```text
+POST /api/v1/driver/ride-requests/{ride_request_id}/accept
+```
+
+Efeito:
+
+- valida que a corrida pertence ao motorista logado;
+- muda `status` para `ACEITA`;
+- grava `accepted_at`;
+- mantem o passageiro vinculado em `passenger_id`.
+
+### 30. Recusar corrida
+
+```text
+POST /api/v1/driver/ride-requests/{ride_request_id}/decline
+```
+
+Efeito:
+
+- valida que a corrida pertence ao motorista logado;
+- muda `status` para `RECUSADA`;
+- grava `declined_at`.
+
+### 31. Avaliar motorista
+
+```text
+POST /api/v1/driver/ride-requests/{ride_request_id}/rating
+```
+
+Usado pelo passageiro logado depois que a corrida foi aceita.
+
+Payload:
+
+```json
+{
+  "rating": 5,
+  "comment": "Motorista pontual e cuidadoso."
+}
+```
+
+Regras:
+
+- a corrida precisa pertencer ao passageiro logado;
+- a corrida precisa estar `ACEITA`;
+- cada corrida aceita pode receber somente uma avaliacao.
+
+Efeito:
+
+- cria registro em `driver_ratings`;
+- atualiza `rating_average` e `rating_count` em `driver_profiles`;
+- a listagem de motoristas disponiveis usa reputacao real na ordenacao sem origem e como desempate quando ha origem.
+
 ## Status do Motorista
 
 Status usados no MVP:
@@ -676,6 +966,17 @@ EM_ANALISE -> RECUSADO
 APROVADO -> BLOQUEADO
 ```
 
+## Status da Corrida
+
+Status usados na primeira versao de solicitacao real:
+
+```text
+PROCURANDO
+SEM_MOTORISTA
+ACEITA
+RECUSADA
+```
+
 ## Tabelas
 
 ### driver_profiles
@@ -687,9 +988,12 @@ Campos importantes:
 - `user_id`
 - `full_name`
 - `cpf`
+- `cnpj`
 - `birth_date`
 - `phone`
 - `email`
+- `pix_key_type`
+- `pix_account`
 - `status`
 - `is_online`
 - `online_since`
@@ -701,6 +1005,8 @@ Campos importantes:
 - `approved_at`
 - `rejected_at`
 - `rejection_reason`
+- `rating_average`
+- `rating_count`
 
 ### driver_documents
 
@@ -751,6 +1057,42 @@ Campos importantes:
 - `permission_status`
 - `captured_at`
 
+### driver_ride_requests
+
+Solicitacoes reais de corrida/carona.
+
+Campos importantes:
+
+- `passenger_id`
+- `driver_id`
+- `status`
+- `origin_latitude`
+- `origin_longitude`
+- `destination_latitude`
+- `destination_longitude`
+- `origin_label`
+- `destination_label`
+- `passenger_name`
+- `passenger_phone`
+- `requested_seats`
+- `distance_meters`
+- `requested_at`
+- `accepted_at`
+- `declined_at`
+
+### driver_ratings
+
+Avaliacoes reais de motoristas feitas por passageiros.
+
+Campos importantes:
+
+- `ride_request_id`
+- `passenger_id`
+- `driver_id`
+- `rating`
+- `comment`
+- `created_at`
+
 ## Integracao com App Motorista
 
 Arquivo principal:
@@ -775,6 +1117,9 @@ Funcoes principais:
 - `pingDriverLocation`
 - `setDriverOnline`
 - `setDriverOffline`
+- `listDriverRideRequests`
+- `acceptDriverRideRequest`
+- `declineDriverRideRequest`
 
 Tela principal:
 
@@ -785,40 +1130,34 @@ app/motorista/src/app/page.tsx
 Pontos ja conectados:
 
 - cadastro real;
+- persistencia real de CNPJ e Pix;
 - upload real de foto;
 - upload real de CNH;
 - cadastro real de veiculo;
 - aprovacao automatica MVP;
 - online/offline;
 - ping de localizacao a cada 30 segundos quando online.
+- API de solicitacao real de corrida com aceite/recusa.
+- API de avaliacao real do motorista e reputacao agregada.
+- painel do motorista lista corridas recebidas e permite aceitar/recusar.
+- tela de carona regional cria solicitacao real em `/driver/ride-requests`.
 
 ## Integracao com Carona
 
-Proxy no web:
-
-```text
-GET /api/rides/drivers
-```
-
-Arquivo:
-
-```text
-app/web/src/app/api/rides/drivers/route.ts
-```
-
-Ele chama:
+Contrato usado pelo modulo de carona na API principal:
 
 ```text
 GET /api/v1/driver/available?limit=10
+POST /api/v1/driver/ride-requests
 ```
 
-Tela que usa:
+Tela web passageiro que consome esse contrato:
 
 ```text
 app/web/src/app/rides/regional/_components/regional-ride-screen.tsx
 ```
 
-Quando o usuario toca em `Pedir carona`, a tela busca motorista disponivel real.
+Quando o usuario toca em `Pedir carona`, a tela deve usar a API principal documentada acima para buscar motorista disponivel e criar a solicitacao real.
 
 ## Integracao com Admin
 
@@ -828,20 +1167,17 @@ Tela:
 app/web/src/app/admin/rides/_components/admin-rides-screen.tsx
 ```
 
-Cliente:
+Rotas da API principal usadas pelo admin:
 
 ```text
-app/web/src/services/admin-client.ts
-```
-
-Proxies:
-
-```text
-GET  /api/admin/drivers
-POST /api/admin/drivers/{driverId}/approve
-POST /api/admin/drivers/{driverId}/reject
-POST /api/admin/drivers/{driverId}/request-documents
-POST /api/admin/drivers/{driverId}/block
+GET  /api/v1/admin/drivers
+POST /api/v1/admin/drivers/{driverId}/approve
+POST /api/v1/admin/drivers/{driverId}/reject
+POST /api/v1/admin/drivers/{driverId}/request-documents
+POST /api/v1/admin/drivers/{driverId}/block
+POST /api/v1/admin/drivers/{driverId}/vehicles/{vehicleId}/approve
+POST /api/v1/admin/drivers/{driverId}/vehicles/{vehicleId}/reject
+POST /api/v1/admin/drivers/{driverId}/vehicles/{vehicleId}/request-documents
 ```
 
 ## Testes
@@ -855,6 +1191,7 @@ app/api/tests/test_driver.py
 Cobre:
 
 - cadastro/perfil/status;
+- CNPJ/Pix e pendencias financeiras;
 - foto de rosto;
 - CNH;
 - aprovacao automatica MVP;
@@ -864,8 +1201,11 @@ Cobre:
 - localizacao;
 - online/offline;
 - motoristas disponiveis para carona;
+- avaliacao real do motorista;
+- ordenacao por reputacao real;
 - upload com contexto de motorista;
-- revisao admin.
+- revisao admin;
+- revisao manual de veiculo.
 
 Comando:
 
@@ -876,20 +1216,21 @@ python -m pytest tests/test_driver.py
 Ultima validacao registrada:
 
 ```text
-7 passed
+26 passed em tests/test_driver.py tests/test_upload.py
 ```
 
 ## Pendencias Para Evoluir
-
-[ ] criar solicitacao real de corrida
-[ ] criar tabela de ride_requests
-[ ] vincular passageiro ao motorista que aceitar
-[ ] criar aceite/recusa de corrida pelo motorista
-[ ] exibir corrida recebida no app motorista
-[ ] calcular proximidade real entre origem e motorista
-[ ] ordenar motoristas por distancia/reputacao
-[ ] criar avaliacao real do motorista
-[ ] criar aprovacao manual de veiculo separada
+[x] criar solicitacao real de corrida
+[x] criar tabela de ride_requests
+[x] vincular passageiro ao motorista que aceitar
+[x] criar aceite/recusa de corrida pelo motorista
+[x] exibir corrida recebida no app motorista
+[x] conectar tela do passageiro para criar solicitacao real
+[x] calcular proximidade real entre origem e motorista
+[x] ordenar motoristas por distancia
+[x] ordenar motoristas por reputacao real
+[x] criar avaliacao real do motorista
+[x] criar aprovacao manual de veiculo separada
 [ ] criar notificacao para documentos solicitados
 [ ] criar logs de auditoria admin
 [ ] trocar aprovacao automatica MVP por fila manual/assistida
