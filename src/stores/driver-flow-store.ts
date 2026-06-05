@@ -7,6 +7,7 @@ export type VehicleBrandOption = {
 };
 
 export type DriverSignupForm = {
+  accepted_privacy: boolean;
   accepted_terms: boolean;
   birth_date: string;
   cnpj: string;
@@ -33,6 +34,7 @@ export type VehicleUploads = {
 };
 
 const initialSignupForm: DriverSignupForm = {
+  accepted_privacy: false,
   accepted_terms: false,
   birth_date: "",
   cnpj: "",

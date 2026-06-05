@@ -5,8 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getDriverReviewStatus,
   acceptDriverRideRequest,
+  checkDriverAccountAvailability,
   declineDriverRideRequest,
   DriverApiError,
+  getDriverTerms,
   loginDriverAccount,
   listDriverRideRequests,
   pingDriverLocation,
@@ -21,6 +23,7 @@ import {
   submitDriverReview,
   uploadDriverImage,
   type DriverRideRequest,
+  type DriverTerms,
 } from "@/services/driver-client";
 import {
   useDriverFlowStore,
@@ -35,6 +38,7 @@ type Screen =
   | "forgot-password"
   | "forgot-success"
   | "signup"
+  | "terms"
   | "face"
   | "cnh"
   | "submitted"
@@ -318,11 +322,14 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
 function Splash() {
   return (
     <div className="splash" aria-label="Suwave Motorista">
-      <div className="splash-mark">
-        <strong>suwave</strong>
-        <span>motorista</span>
-        <i aria-hidden="true" />
-      </div>
+      <Image
+        alt=""
+        className="splash-image"
+        fill
+        priority
+        sizes="100vw"
+        src="/motorista/splash.png"
+      />
     </div>
   );
 }
@@ -833,6 +840,7 @@ function Signup({
   signupStep: number;
 }) {
   const [error, setError] = useState("");
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
 
   function updateField(field: keyof DriverSignupForm, value: string | boolean) {
     setForm({ ...form, [field]: value });
@@ -878,13 +886,47 @@ function Signup({
     return true;
   }
 
-  function handleNextSignupStep() {
-    if (validateAccountStep()) {
-      setSignupStep(2);
+  async function validateAvailability(input: { cpf?: string; email?: string; whatsapp?: string }) {
+    const availability = await checkDriverAccountAvailability(input);
+
+    if (availability.conflicts.email) {
+      setError("Este e-mail já está cadastrado. Entre na conta existente ou use outro e-mail.");
+      return false;
+    }
+
+    if (availability.conflicts.whatsapp) {
+      setError("Este WhatsApp já está cadastrado. Entre na conta existente ou use outro número.");
+      return false;
+    }
+
+    if (availability.conflicts.cpf) {
+      setError("Este CPF já está cadastrado. Entre na conta existente ou use a recuperação de senha.");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function handleNextSignupStep() {
+    if (!validateAccountStep()) {
+      return;
+    }
+
+    setIsCheckingAvailability(true);
+    try {
+      const email = form.email.trim().toLowerCase();
+      if (await validateAvailability({ email })) {
+        setError("");
+        setSignupStep(2);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível validar o e-mail agora.");
+    } finally {
+      setIsCheckingAvailability(false);
     }
   }
 
-  function handleContinue() {
+  async function handleContinue() {
     if (!validateAccountStep()) {
       return;
     }
@@ -898,7 +940,7 @@ function Signup({
       setError("Informe um CPF com 11 números.");
       return;
     }
-    if (cnpj.length !== 14) {
+    if (cnpj && cnpj.length !== 14) {
       setError("Informe um CNPJ com 14 números.");
       return;
     }
@@ -914,12 +956,31 @@ function Signup({
       setError("Informe a conta Pix.");
       return;
     }
-    if (!form.accepted_terms) {
-      setError("Aceite os termos para continuar.");
+
+    setIsCheckingAvailability(true);
+    try {
+      const email = form.email.trim().toLowerCase();
+      if (await validateAvailability({ cpf, email, whatsapp })) {
+        setError("");
+        go("terms");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível validar os dados agora.");
+    } finally {
+      setIsCheckingAvailability(false);
+    }
+  }
+
+  function handleBack() {
+    if (isCheckingAvailability) {
       return;
     }
 
-    go("face");
+    if (signupStep === 1) {
+      go("login");
+    } else {
+      setSignupStep(1);
+    }
   }
 
   return (
@@ -965,7 +1026,7 @@ function Signup({
             <Field
               icon="briefcase"
               inputMode="numeric"
-              label="CNPJ"
+              label="CNPJ (opcional)"
               maxLength={18}
               onChange={(value) => updateField("cnpj", maskCnpj(value))}
               value={form.cnpj}
@@ -985,6 +1046,7 @@ function Signup({
               options={[
                 { label: "E-mail", value: "email", icon: "mail" },
                 { label: "Telefone", value: "phone", icon: "phone" },
+                { label: "CPF", value: "cpf", icon: "id" },
                 { label: "CNPJ", value: "cnpj", icon: "briefcase" },
                 { label: "Chave aleatória", value: "random", icon: "spark" },
               ]}
@@ -996,27 +1058,124 @@ function Signup({
               onChange={(value) => updateField("pix_account", value)}
               value={form.pix_account}
             />
-            <label className="terms-check">
-              <input
-                checked={form.accepted_terms}
-                onChange={(event) => updateField("accepted_terms", event.target.checked)}
-                type="checkbox"
-              />
-              <span>Aceito os termos de uso e as regras do Motorista SUWAVE.</span>
-            </label>
           </>
         )}
       </div>
       <FormToast message={error} />
       {signupStep === 1 ? (
-        <ActionButton onClick={handleNextSignupStep}>Continuar</ActionButton>
+        <ActionButton disabled={isCheckingAvailability} onClick={handleNextSignupStep}>
+          {isCheckingAvailability ? "Validando..." : "Continuar"}
+        </ActionButton>
       ) : (
-        <ActionButton onClick={handleContinue}>Continuar</ActionButton>
+        <ActionButton disabled={isCheckingAvailability} onClick={handleContinue}>
+          {isCheckingAvailability ? "Validando..." : "Continuar"}
+        </ActionButton>
       )}
-      <button className="plain-back" onClick={() => (signupStep === 1 ? go("login") : setSignupStep(1))} type="button">
+      <button className="plain-back" disabled={isCheckingAvailability} onClick={handleBack} type="button">
         Voltar
       </button>
       <FooterNote />
+    </section>
+  );
+}
+
+const fallbackDriverTerms: DriverTerms = {
+  body:
+    "A SUWAVE Motorista conecta motoristas e passageiros em cidades pequenas e regiões próximas. Devido às diferentes legislações municipais, necessidades operacionais e regras locais, este Termo de Uso poderá ser complementado por um termo específico da cidade de atuação do motorista, quando necessário.",
+  document_key: "driver_terms",
+  id: null,
+  privacy_url: "/more",
+  title: "Termos de uso",
+  updated_at: null,
+  version: 1,
+};
+
+function TermsScreen({
+  form,
+  go,
+  setForm,
+}: {
+  form: DriverSignupForm;
+  go: (screen: Screen) => void;
+  setForm: (form: DriverSignupForm) => void;
+}) {
+  const [error, setError] = useState("");
+  const [terms, setTerms] = useState<DriverTerms>(fallbackDriverTerms);
+
+  useEffect(() => {
+    let active = true;
+
+    getDriverTerms()
+      .then((document) => {
+        if (active) {
+          setTerms(document);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setTerms(fallbackDriverTerms);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function updateField(field: "accepted_terms" | "accepted_privacy", value: boolean) {
+    setForm({ ...form, [field]: value });
+  }
+
+  function handleContinue() {
+    setError("");
+
+    if (!form.accepted_terms || !form.accepted_privacy) {
+      setError("Marque os dois aceites para continuar.");
+      return;
+    }
+
+    go("face");
+  }
+
+  return (
+    <section className="scroll-screen terms-screen">
+      <header className="terms-header">
+        <button aria-label="Voltar" onClick={() => go("signup")} type="button">
+          <Icon name="arrow-left" />
+        </button>
+        <h1>{terms.title}</h1>
+        <span aria-hidden="true" />
+      </header>
+      <div className="terms-card">
+        <p>{terms.body}</p>
+      </div>
+      <p className="terms-privacy">
+        É importante também que você leia a nossa{" "}
+        <a href={terms.privacy_url || "/more"} target="_blank" rel="noreferrer">
+          Política de Privacidade
+        </a>
+        .
+      </p>
+      <label className="terms-row">
+        <input
+          checked={form.accepted_terms}
+          onChange={(event) => updateField("accepted_terms", event.target.checked)}
+          type="checkbox"
+        />
+        <span>
+          Eu li, <strong>entendi e concordo</strong> com os Termos de Uso e Política de Privacidade.
+        </span>
+      </label>
+      <label className="terms-row">
+        <input
+          checked={form.accepted_privacy}
+          onChange={(event) => updateField("accepted_privacy", event.target.checked)}
+          type="checkbox"
+        />
+        <span>Concordo com o tratamento dos dados pessoais disponibilizados, nos termos da LGPD.</span>
+      </label>
+      <FormToast message={error} />
+      <ActionButton onClick={handleContinue}>Continuar</ActionButton>
     </section>
   );
 }
@@ -1187,14 +1346,34 @@ function Cnh({
           whatsapp,
         });
       } catch (err) {
-        if (!(err instanceof DriverApiError) || !["email_already_exists", "cpf_already_exists", "whatsapp_already_exists"].includes(err.code ?? "")) {
+        if (!(err instanceof DriverApiError)) {
           throw err;
         }
 
-        session = await loginDriverAccount({
-          email,
-          password: signupForm.password,
-        });
+        if (err.code === "cpf_already_exists") {
+          throw new Error("Este CPF já está cadastrado. Entre na conta existente ou use a recuperação de senha.");
+        }
+
+        if (err.code === "whatsapp_already_exists") {
+          throw new Error("Este WhatsApp já está cadastrado. Entre na conta existente ou use a recuperação de senha.");
+        }
+
+        if (err.code !== "email_already_exists") {
+          throw err;
+        }
+
+        try {
+          session = await loginDriverAccount({
+            email,
+            password: signupForm.password,
+          });
+        } catch (loginErr) {
+          if (loginErr instanceof DriverApiError && loginErr.code === "invalid_credentials") {
+            throw new Error("Este e-mail já está cadastrado, mas a senha informada não confere. Use outra conta ou recupere a senha.");
+          }
+
+          throw loginErr;
+        }
       }
 
       localStorage.setItem("suwave-driver-token", session.access_token);
@@ -2155,6 +2334,8 @@ export default function Home() {
             signupStep={signupStep}
           />
         );
+      case "terms":
+        return <TermsScreen form={signupForm} go={go} setForm={setSignupForm} />;
       case "face":
         return (
           <FacePhoto
@@ -2162,7 +2343,7 @@ export default function Home() {
             go={go}
             onBack={() => {
               setSignupStep(2);
-              go("signup");
+              go("terms");
             }}
             setFaceFile={setFaceFile}
           />

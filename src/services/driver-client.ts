@@ -87,6 +87,11 @@ export type DriverAuthSession = {
   };
 };
 
+export type AccountAvailability = {
+  available: boolean;
+  conflicts: Partial<Record<"email" | "cpf" | "whatsapp", boolean>>;
+};
+
 export type UploadResult = {
   storage_file_id?: number | string | null;
   url: string;
@@ -118,6 +123,16 @@ export type DriverRideRequest = {
   requested_at: string;
   requested_seats: number;
   status: "PROCURANDO" | "SEM_MOTORISTA" | "ACEITA" | "RECUSADA";
+};
+
+export type DriverTerms = {
+  body: string;
+  document_key: string;
+  id?: string | null;
+  privacy_url?: string | null;
+  title: string;
+  updated_at?: string | null;
+  version: number;
 };
 
 async function parseResponse<T>(response: Response) {
@@ -155,6 +170,16 @@ export async function registerDriverAccount(input: {
   return parseResponse<DriverAuthSession>(response);
 }
 
+export async function checkDriverAccountAvailability(input: { cpf?: string; email?: string; whatsapp?: string }) {
+  const response = await apiRequest("/auth/account/availability", {
+    body: JSON.stringify(input),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  return parseResponse<AccountAvailability>(response);
+}
+
 export async function loginDriverAccount(input: { email?: string; whatsapp?: string; password: string }) {
   const response = await apiRequest("/auth/login", {
     body: JSON.stringify(input),
@@ -173,6 +198,11 @@ export async function requestDriverPasswordReset(input: { email?: string; whatsa
   });
 
   return parseResponse<{ email: string; whatsapp?: string | null }>(response);
+}
+
+export async function getDriverTerms() {
+  const response = await apiRequest("/driver/terms");
+  return parseResponse<DriverTerms>(response);
 }
 
 export async function saveDriverProfile(
