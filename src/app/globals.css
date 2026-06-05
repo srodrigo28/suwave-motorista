@@ -165,11 +165,23 @@ button {
   height: calc(100% - 58px);
   overflow: auto;
   padding: 14px 30px 28px;
-  scrollbar-width: none;
+  overscroll-behavior: contain;
+  scrollbar-color: #ffc400 #eef2f5;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .scroll-screen::-webkit-scrollbar {
-  display: none;
+  width: 7px;
+}
+
+.scroll-screen::-webkit-scrollbar-track {
+  background: #eef2f5;
+}
+
+.scroll-screen::-webkit-scrollbar-thumb {
+  background: #ffc400;
+  border-radius: 999px;
 }
 
 .center-screen {
@@ -1219,9 +1231,9 @@ h2 {
 
 .face-screen .success-line span {
   align-items: center;
-  background: var(--green);
+  background: var(--suwave-yellow);
   border-radius: 50%;
-  color: #fff;
+  color: #090909;
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 16px;
@@ -1246,10 +1258,10 @@ h2 {
 
 .success-line,
 .success-box {
-  background: var(--green-soft);
-  border: 1px solid #9ed8b1;
+  background: #fff8df;
+  border: 1px solid #ffd762;
   border-radius: 8px;
-  color: var(--green-dark);
+  color: #533f00;
   font-size: 17px;
   font-weight: 700;
   line-height: 1.35;
@@ -2312,30 +2324,6 @@ h2 {
   height: 44px;
   margin-bottom: -40px;
   width: 44px;
-}
-
-.footer-note {
-  color: #315974;
-  display: grid;
-  gap: 6px;
-  justify-items: center;
-  margin-top: auto;
-  padding-top: 26px;
-}
-
-.login-footer-art {
-  display: block;
-  height: auto;
-  max-width: 100%;
-  object-fit: contain;
-  width: min(100%, 360px);
-}
-
-.footer-note p {
-  color: #171717;
-  font-size: 16px;
-  line-height: 1.25;
-  margin: 0;
 }
 
 @keyframes toastIn {

@@ -601,19 +601,7 @@ function FormToast({ message }: { message?: string }) {
 }
 
 function FooterNote() {
-  return (
-    <footer className="footer-note">
-      <Image
-        alt=""
-        aria-hidden="true"
-        className="login-footer-art"
-        height={95}
-        src="/motorista/inicio-rodape.png"
-        width={600}
-      />
-      <p>Mobilidade pensada para cidades pequenas</p>
-    </footer>
-  );
+  return null;
 }
 
 function Login({
@@ -889,11 +877,6 @@ function Signup({
   async function validateAvailability(input: { cpf?: string; email?: string; whatsapp?: string }) {
     const availability = await checkDriverAccountAvailability(input);
 
-    if (availability.conflicts.email) {
-      setError("Este e-mail já está cadastrado. Entre na conta existente ou use outro e-mail.");
-      return false;
-    }
-
     if (availability.conflicts.whatsapp) {
       setError("Este WhatsApp já está cadastrado. Entre na conta existente ou use outro número.");
       return false;
@@ -912,18 +895,8 @@ function Signup({
       return;
     }
 
-    setIsCheckingAvailability(true);
-    try {
-      const email = form.email.trim().toLowerCase();
-      if (await validateAvailability({ email })) {
-        setError("");
-        setSignupStep(2);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível validar o e-mail agora.");
-    } finally {
-      setIsCheckingAvailability(false);
-    }
+    setError("");
+    setSignupStep(2);
   }
 
   async function handleContinue() {
@@ -1223,7 +1196,6 @@ function FacePhoto({
         <p>Cadastro do motorista</p>
         <span aria-hidden="true" />
       </header>
-      <p className="step-label strong">3 de 5</p>
       <Progress current={3} total={primarySteps} />
       <h1>Validar foto do rosto</h1>
       <p className="subtitle">Tire uma foto nitida do seu rosto</p>
@@ -1369,7 +1341,7 @@ function Cnh({
           });
         } catch (loginErr) {
           if (loginErr instanceof DriverApiError && loginErr.code === "invalid_credentials") {
-            throw new Error("Este e-mail já está cadastrado, mas a senha informada não confere. Use outra conta ou recupere a senha.");
+            throw new Error("Este e-mail já existe em outro app SUWAVE. Para juntar as contas, informe a senha dessa conta ou recupere a senha.");
           }
 
           throw loginErr;
@@ -1416,7 +1388,6 @@ function Cnh({
   return (
     <section className="scroll-screen cnh-screen">
       <p className="eyebrow">Cadastro do motorista</p>
-      <p className="step-label strong">4 de 5</p>
       <Progress current={4} total={primarySteps} />
       <h1>Enviar CNH</h1>
       <p className="subtitle">Envie imagens nitidas do documento</p>
@@ -1477,7 +1448,6 @@ function Submitted({ go }: { go: (screen: Screen) => void }) {
     <section className="scroll-screen center-screen">
       <BrandLockup />
       <Progress current={5} total={primarySteps} />
-      <p className="step-label strong">5 de 5</p>
       <div className="hero-car approved" aria-hidden="true">
         <div className="check">✓</div>
         <div className="town" />
