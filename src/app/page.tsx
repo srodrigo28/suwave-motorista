@@ -484,6 +484,39 @@ function SelectField({
   );
 }
 
+function RadioGroupField({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  value: string;
+}) {
+  return (
+    <fieldset className="radio-field">
+      <legend>{label}</legend>
+      <div>
+        {options.map((option) => (
+          <label className={value === option.value ? "radio-option selected" : "radio-option"} key={option.value}>
+            <input
+              checked={value === option.value}
+              name={label}
+              onChange={() => onChange(option.value)}
+              type="radio"
+              value={option.value}
+            />
+            <span aria-hidden="true" />
+            <strong>{option.label}</strong>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
 }
@@ -870,23 +903,16 @@ function Signup({
       setError("Informe a data no formato DD/MM/AAAA.");
       return false;
     }
+    if (!form.gender) {
+      setError("Selecione seu sexo.");
+      return false;
+    }
 
     return true;
   }
 
   async function validateAvailability(input: { cpf?: string; email?: string; whatsapp?: string }) {
-    const availability = await checkDriverAccountAvailability(input);
-
-    if (availability.conflicts.whatsapp) {
-      setError("Este WhatsApp já está cadastrado. Entre na conta existente ou use outro número.");
-      return false;
-    }
-
-    if (availability.conflicts.cpf) {
-      setError("Este CPF já está cadastrado. Entre na conta existente ou use a recuperação de senha.");
-      return false;
-    }
-
+    await checkDriverAccountAvailability(input);
     return true;
   }
 
@@ -975,6 +1001,15 @@ function Signup({
               maxLength={10}
               onChange={(value) => updateField("birth_date", maskDate(value))}
               value={form.birth_date}
+            />
+            <RadioGroupField
+              label="Sexo"
+              onChange={(value) => updateField("gender", value)}
+              options={[
+                { label: "Masculino", value: "masculino" },
+                { label: "Feminino", value: "feminino" },
+              ]}
+              value={form.gender}
             />
             <Field icon="mail" label="E-mail" onChange={(value) => updateField("email", value)} type="email" value={form.email} />
             <Field icon="lock" label="Senha" onChange={(value) => updateField("password", value)} secure value={form.password} />
@@ -1311,23 +1346,14 @@ function Cnh({
       try {
         session = await registerDriverAccount({
           birth_date: birthDateIso || undefined,
-          cpf,
           email,
           full_name: signupForm.full_name,
+          gender: signupForm.gender,
           password: signupForm.password,
-          whatsapp,
         });
       } catch (err) {
         if (!(err instanceof DriverApiError)) {
           throw err;
-        }
-
-        if (err.code === "cpf_already_exists") {
-          throw new Error("Este CPF já está cadastrado. Entre na conta existente ou use a recuperação de senha.");
-        }
-
-        if (err.code === "whatsapp_already_exists") {
-          throw new Error("Este WhatsApp já está cadastrado. Entre na conta existente ou use a recuperação de senha.");
         }
 
         if (err.code !== "email_already_exists") {
@@ -1357,6 +1383,7 @@ function Cnh({
         cpf,
         email,
         full_name: signupForm.full_name,
+        gender: signupForm.gender,
         phone: whatsapp,
         pix_account: signupForm.pix_account.trim(),
         pix_key_type: signupForm.pix_key_type,
@@ -1481,6 +1508,7 @@ const reviewMissingLabels: Record<string, string> = {
   email: "e-mail",
   face_photo: "foto do rosto",
   full_name: "nome completo",
+  gender: "sexo",
   pix_account: "conta Pix",
   pix_key_type: "tipo de chave Pix",
 };

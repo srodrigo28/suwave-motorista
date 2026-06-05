@@ -15,6 +15,7 @@ export type DriverSignupForm = {
   cpf: string;
   email: string;
   full_name: string;
+  gender: string;
   password: string;
   pix_account: string;
   pix_key_type: string;
@@ -42,6 +43,7 @@ const initialSignupForm: DriverSignupForm = {
   cpf: "",
   email: "",
   full_name: "",
+  gender: "",
   password: "",
   pix_account: "",
   pix_key_type: "",

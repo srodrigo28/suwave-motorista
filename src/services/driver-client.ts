@@ -155,11 +155,10 @@ async function apiRequest(path: string, init?: RequestInit) {
 
 export async function registerDriverAccount(input: {
   birth_date?: string;
-  cpf?: string;
   email: string;
   full_name: string;
+  gender: string;
   password: string;
-  whatsapp?: string;
 }) {
   const response = await apiRequest("/auth/register", {
     body: JSON.stringify({ ...input, accepted_terms: true }),
@@ -213,6 +212,7 @@ export async function saveDriverProfile(
     cpf?: string;
     email: string;
     full_name: string;
+    gender: string;
     phone?: string;
     pix_account?: string;
     pix_key_type?: string;
@@ -235,6 +235,7 @@ export async function updateDriverProfile(
     cpf?: string;
     email: string;
     full_name: string;
+    gender: string;
     phone?: string;
     pix_account?: string;
     pix_key_type?: string;
