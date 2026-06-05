@@ -964,6 +964,12 @@ function Signup({
         go("terms");
       }
     } catch (err) {
+      if (err instanceof DriverApiError && err.code === "internal_error") {
+        setError("");
+        go("terms");
+        return;
+      }
+
       setError(err instanceof Error ? err.message : "Não foi possível validar os dados agora.");
     } finally {
       setIsCheckingAvailability(false);
@@ -1008,6 +1014,7 @@ function Signup({
               options={[
                 { label: "Masculino", value: "masculino" },
                 { label: "Feminino", value: "feminino" },
+                { label: "Outros", value: "outros" },
               ]}
               value={form.gender}
             />
@@ -1200,7 +1207,59 @@ function FacePhoto({
   setFaceFile: (file: File) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState("");
+  const [cameraError, setCameraError] = useState("");
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  function stopCamera() {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setIsCameraActive(false);
+    setIsCameraReady(false);
+  }
+
+  async function startCamera() {
+    setError("");
+    setCameraError("");
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("A câmera não está disponível neste navegador. Use o botão de escolher foto.");
+      return;
+    }
+
+    try {
+      stopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: "user" },
+      });
+
+      cameraStreamRef.current = stream;
+      setIsCameraActive(true);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch {
+      setCameraError("Não foi possível abrir a câmera. Verifique a permissão do navegador.");
+    }
+  }
+
+  function updatePreview(file: File) {
+    setPreviewUrl((currentUrl) => {
+      if (currentUrl) {
+        URL.revokeObjectURL(currentUrl);
+      }
+
+      return URL.createObjectURL(file);
+    });
+  }
 
   function handleFaceFile(file?: File) {
     if (!file) {
@@ -1209,7 +1268,44 @@ function FacePhoto({
     }
 
     setError("");
+    setCameraError("");
+    updatePreview(file);
     setFaceFile(file);
+    stopCamera();
+  }
+
+  function handleCaptureFace() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || !isCameraReady) {
+      setError("Aguarde a câmera carregar para tirar a foto.");
+      return;
+    }
+
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+
+    if (!width || !height) {
+      setError("Não foi possível capturar a imagem da câmera.");
+      return;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d")?.drawImage(video, 0, 0, width, height);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          setError("Não foi possível salvar a foto capturada.");
+          return;
+        }
+
+        handleFaceFile(new File([blob], `rosto-motorista-${Date.now()}.jpg`, { type: "image/jpeg" }));
+      },
+      "image/jpeg",
+      0.92,
+    );
   }
 
   function handleNext() {
@@ -1221,6 +1317,20 @@ function FacePhoto({
     setError("");
     go("cnh");
   }
+
+  useEffect(() => {
+    return () => {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   return (
     <section className="scroll-screen face-screen">
@@ -1234,20 +1344,30 @@ function FacePhoto({
       <Progress current={3} total={primarySteps} />
       <h1>Validar foto do rosto</h1>
       <p className="subtitle">Tire uma foto nitida do seu rosto</p>
-      <button
-        aria-label="Abrir câmera para tirar foto do rosto"
-        className="face-card"
-        onClick={() => fileInputRef.current?.click()}
-        type="button"
-      >
-        <Image
-          alt="Modelo de posicionamento correto do rosto"
-          className="face-reference-photo"
-          height={1024}
-          priority
-          src="/face-validation-model.png"
-          width={1024}
-        />
+      <div className={previewUrl ? "face-card has-photo" : isCameraActive ? "face-card live" : "face-card"}>
+        {previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt="Foto capturada do rosto" className="face-preview-photo" src={previewUrl} />
+        ) : isCameraActive ? (
+          <video
+            aria-label="Câmera frontal para foto do rosto"
+            autoPlay
+            className="face-camera-video"
+            muted
+            onCanPlay={() => setIsCameraReady(true)}
+            playsInline
+            ref={videoRef}
+          />
+        ) : (
+          <Image
+            alt="Modelo de posicionamento correto do rosto"
+            className="face-reference-photo"
+            height={1024}
+            priority
+            src="/face-validation-model.png"
+            width={1024}
+          />
+        )}
         <span className="tip left">
           <Icon name="spark" /> Boa iluminação
         </span>
@@ -1258,11 +1378,15 @@ function FacePhoto({
         <span className="tip bottom">
           <Icon name="ban" /> Sem acessórios que cubram o rosto
         </span>
-      </button>
-      <div className="success-line">
-        <span>✓</span>
-        Foto válida! Sua foto está nítida e bem enquadrada.
       </div>
+      <canvas aria-hidden="true" className="face-capture-canvas" ref={canvasRef} />
+      {faceFile ? (
+        <div className="success-line">
+          <span>✓</span>
+          Foto válida! Sua foto está nítida e bem enquadrada.
+        </div>
+      ) : null}
+      {cameraError ? <p className="camera-error">{cameraError}</p> : null}
       <input
         accept="image/*"
         capture="user"
@@ -1272,9 +1396,12 @@ function FacePhoto({
         type="file"
       />
       <FormToast message={error} />
+      <ActionButton disabled={isCameraActive && !isCameraReady} onClick={isCameraActive ? handleCaptureFace : startCamera}>
+        {isCameraActive ? "Tirar foto" : "Abrir câmera"}
+      </ActionButton>
       <ActionButton onClick={handleNext}>Próximo</ActionButton>
       <ActionButton onClick={() => fileInputRef.current?.click()} secondary>
-        Tentar novamente
+        Escolher foto
       </ActionButton>
       <p className="security">▣ Suas fotos são protegidas e usadas apenas para verificação de segurança.</p>
       <FooterNote />
