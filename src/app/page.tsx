@@ -11,6 +11,7 @@ import {
   listDriverRideRequests,
   pingDriverLocation,
   registerDriverAccount,
+  requestDriverPasswordReset,
   saveDriverCnh,
   saveDriverFacePhoto,
   saveDriverProfile,
@@ -31,6 +32,8 @@ import {
 
 type Screen =
   | "login"
+  | "forgot-password"
+  | "forgot-success"
   | "signup"
   | "face"
   | "cnh"
@@ -41,6 +44,11 @@ type Screen =
   | "vehicle-data"
   | "vehicle-photos"
   | "vehicle-review";
+
+type PasswordResetContact = {
+  email?: string;
+  whatsapp?: string;
+};
 
 const primarySteps = ["1", "2", "3", "4", "5"];
 const vehicleSteps = ["1", "2", "3", "4"];
@@ -124,6 +132,13 @@ function Icon({ name }: { name: string }) {
           <path d="m4 7 8 6 8-6" />
         </svg>
       );
+    case "whatsapp":
+      return (
+        <svg {...common}>
+          <path d="M4.8 19.1 5.9 16A8 8 0 1 1 8 18.1l-3.2 1Z" />
+          <path d="M9.4 8.7c.2-.4.4-.4.7-.4h.5c.2 0 .4.1.5.4l.6 1.4c.1.3.1.5-.1.7l-.4.5c.7 1.2 1.6 2 2.8 2.6l.5-.6c.2-.2.4-.3.7-.2l1.4.7c.3.1.4.3.4.6v.4c0 .3-.1.6-.4.8-.5.4-1.1.6-1.8.5-2.9-.5-5.6-2.8-6.5-5.6-.2-.7-.1-1.4.3-1.9Z" />
+        </svg>
+      );
     case "lock":
       return (
         <svg {...common}>
@@ -175,6 +190,12 @@ function Icon({ name }: { name: string }) {
         <svg {...common}>
           <path d="M18 6 6 18" />
           <path d="m6 6 12 12" />
+        </svg>
+      );
+    case "check":
+      return (
+        <svg {...common}>
+          <path d="m5 12 5 5 9-10" />
         </svg>
       );
     case "arrow-left":
@@ -284,10 +305,12 @@ function Icon({ name }: { name: string }) {
 function BrandLockup({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`brand-lockup ${compact ? "compact" : ""}`}>
-      <div>
-        <strong>SUWAVE</strong>
-        <small>Motorista</small>
-      </div>
+      <Image
+        alt="SUWAVE Motorista"
+        height={150}
+        src="/motorista/inicio-logo.png"
+        width={520}
+      />
     </div>
   );
 }
@@ -547,8 +570,26 @@ function ActionButton({
   return (
     <button className={secondary ? "action secondary" : "action"} disabled={disabled} onClick={onClick} type="button">
       {children}
-      <span aria-hidden="true">{secondary ? "›" : "→"}</span>
+      <span aria-hidden="true" className="action-icon">
+        <svg fill="none" viewBox="0 0 24 24">
+          <path d="M5 12h13" />
+          <path d="m13 6 6 6-6 6" />
+        </svg>
+      </span>
     </button>
+  );
+}
+
+function FormToast({ message }: { message?: string }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div aria-live="polite" className="form-toast" role="status">
+      <span aria-hidden="true">!</span>
+      <p>{message}</p>
+    </div>
   );
 }
 
@@ -621,13 +662,157 @@ function Login({
       </div>
       <Field icon="mail" label="E-mail ou WhatsApp" onChange={setIdentifier} value={identifier} />
       <Field icon="lock" label="Senha" onChange={setPassword} secure value={password} />
-      <button className="link-button" type="button">
+      <button className="link-button" onClick={() => go("forgot-password")} type="button">
         Esqueci minha senha
       </button>
-      {error ? <p className="form-error">{error}</p> : null}
+      <FormToast message={error} />
       <ActionButton onClick={handleLogin}>{isSubmitting ? "Entrando..." : "Entrar"}</ActionButton>
       <ActionButton onClick={() => go("signup")} secondary>
         Cadastrar como motorista
+      </ActionButton>
+      <FooterNote />
+    </section>
+  );
+}
+
+function ForgotPassword({
+  go,
+  setResetContact,
+}: {
+  go: (screen: Screen) => void;
+  setResetContact: (contact: PasswordResetContact) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    setMessage("");
+    const cleanEmail = email.trim();
+    const cleanWhatsapp = onlyDigits(whatsapp);
+
+    if (!cleanEmail && !cleanWhatsapp) {
+      setMessage("Informe seu e-mail ou WhatsApp para redefinir sua senha.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const contact = {
+        ...(cleanEmail ? { email: cleanEmail } : {}),
+        ...(cleanWhatsapp ? { whatsapp: cleanWhatsapp } : {}),
+      };
+      await requestDriverPasswordReset(contact);
+      setResetContact(contact);
+      go("forgot-success");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "E-mail ou WhatsApp não encontrado.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="scroll-screen center-screen login-screen forgot-password-screen">
+      <Image
+        alt="SUWAVE Motorista"
+        className="login-logo"
+        height={150}
+        priority
+        src="/motorista/inicio-logo.png"
+        width={520}
+      />
+      <div className="login-hero" aria-hidden="true">
+        <Image
+          alt=""
+          className="login-hero-art"
+          height={425}
+          priority
+          src="/motorista/inicio-carro-cidade.png"
+          width={638}
+        />
+      </div>
+      <div className="forgot-copy">
+        <p>Informe seu e-mail ou WhatsApp para redefinir sua senha</p>
+      </div>
+      <Field icon="mail" label="E-mail" onChange={setEmail} type="email" value={email} />
+      <Field icon="whatsapp" inputMode="tel" label="WhatsApp" onChange={(value) => setWhatsapp(maskPhone(value))} value={whatsapp} />
+      <FormToast message={message} />
+      <ActionButton onClick={handleSubmit}>{isSubmitting ? "Enviando..." : "Redefinir senha"}</ActionButton>
+      <ActionButton onClick={() => go("login")} secondary>
+        Voltar
+      </ActionButton>
+      <FooterNote />
+    </section>
+  );
+}
+
+function ForgotPasswordSuccess({
+  contact,
+  go,
+}: {
+  contact: PasswordResetContact;
+  go: (screen: Screen) => void;
+}) {
+  const [message, setMessage] = useState("");
+  const [isResending, setIsResending] = useState(false);
+
+  async function handleResend() {
+    if (!contact.email && !contact.whatsapp) {
+      go("forgot-password");
+      return;
+    }
+
+    setMessage("");
+    setIsResending(true);
+    try {
+      await requestDriverPasswordReset(contact);
+      setMessage("Link reenviado com sucesso.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível reenviar o link.");
+    } finally {
+      setIsResending(false);
+    }
+  }
+
+  return (
+    <section className="scroll-screen center-screen login-screen forgot-success-screen">
+      <Image
+        alt="SUWAVE Motorista"
+        className="login-logo"
+        height={150}
+        priority
+        src="/motorista/inicio-logo.png"
+        width={520}
+      />
+      <div className="login-hero" aria-hidden="true">
+        <Image
+          alt=""
+          className="login-hero-art"
+          height={425}
+          priority
+          src="/motorista/inicio-carro-cidade.png"
+          width={638}
+        />
+      </div>
+      <div className="success-check" aria-hidden="true">
+        <Icon name="check" />
+      </div>
+      <div className="forgot-success-copy">
+        <h1>Enviado com sucesso</h1>
+        <p>
+          Enviamos um link para redefinir sua senha.
+          <br />
+          Você tem 24 horas para usar o link enviado.
+          <br />
+          Verifique seu e-mail ou WhatsApp.
+        </p>
+      </div>
+      <FormToast message={message} />
+      <ActionButton onClick={() => go("login")}>Voltar para entrar</ActionButton>
+      <ActionButton disabled={isResending} onClick={handleResend} secondary>
+        {isResending ? "Reenviando..." : "Reenviar link"}
       </ActionButton>
       <FooterNote />
     </section>
@@ -741,9 +926,10 @@ function Signup({
     <section className="scroll-screen">
       <BrandLockup compact />
       <Progress current={signupStep} total={primarySteps} />
-      <p className="step-label">{signupStep} de 5</p>
-      <h1>Cadastro do motorista</h1>
-      <p className="subtitle">{signupStep === 1 ? "Dados de acesso" : "Dados de contato e Pix"}</p>
+      <h1 className="signup-title">Cadastro do motorista</h1>
+      <p className="subtitle signup-subtitle">
+        {signupStep === 1 ? "Preencha seus dados" : "Dados de contato e Pix"}
+      </p>
       <div className="form-stack">
         {signupStep === 1 ? (
           <>
@@ -821,7 +1007,7 @@ function Signup({
           </>
         )}
       </div>
-      {error ? <p className="form-error">{error}</p> : null}
+      <FormToast message={error} />
       {signupStep === 1 ? (
         <ActionButton onClick={handleNextSignupStep}>Continuar</ActionButton>
       ) : (
@@ -830,6 +1016,7 @@ function Signup({
       <button className="plain-back" onClick={() => (signupStep === 1 ? go("login") : setSignupStep(1))} type="button">
         Voltar
       </button>
+      <FooterNote />
     </section>
   );
 }
@@ -918,12 +1105,13 @@ function FacePhoto({
         ref={fileInputRef}
         type="file"
       />
-      {error ? <p className="form-error">{error}</p> : null}
+      <FormToast message={error} />
       <ActionButton onClick={handleNext}>Próximo</ActionButton>
       <ActionButton onClick={() => fileInputRef.current?.click()} secondary>
         Tentar novamente
       </ActionButton>
       <p className="security">▣ Suas fotos são protegidas e usadas apenas para verificação de segurança.</p>
+      <FooterNote />
     </section>
   );
 }
@@ -1093,7 +1281,7 @@ function Cnh({
         </button>
       </div>
       <p className="info-line">ⓘ Verifique se todos os dados estão legíveis</p>
-      {error ? <p className="form-error">{error}</p> : null}
+      <FormToast message={error} />
       <ActionButton disabled={isSubmitting} onClick={handleFinish}>
         {isSubmitting ? "Concluindo..." : "Concluir cadastro"}
       </ActionButton>
@@ -1236,12 +1424,14 @@ function Status({
         Faltam <strong>{timeLeft}</strong> para liberar
       </p>
       <p className="subtitle">Estamos verificando seus dados. A liberação automática segue a regra de 10 minutos.</p>
-      {error ? <p className="form-error">{error}</p> : null}
-      {missingFields.length ? (
-        <p className="form-error">
-          Pendências: {missingFields.map((field) => reviewMissingLabels[field] ?? field).join(", ")}.
-        </p>
-      ) : null}
+      <FormToast
+        message={
+          error ||
+          (missingFields.length
+            ? `Pendências: ${missingFields.map((field) => reviewMissingLabels[field] ?? field).join(", ")}.`
+            : "")
+        }
+      />
       <div className="checklist">
         <span>✓ Telefone confirmado</span>
         <span>✓ Foto recebida</span>
@@ -1252,6 +1442,7 @@ function Status({
       <ActionButton onClick={() => go("submitted")} secondary>
         Ver meus dados
       </ActionButton>
+      <FooterNote />
     </section>
   );
 }
@@ -1433,13 +1624,10 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
           </button>
         </div>
         <div className="sheet-title">
-          <div>
-            <h1>Dirija na sua cidade</h1>
-            <p>Mobilidade pensada para cidades pequenas</p>
-          </div>
+          <div aria-hidden="true" />
           <div className="mini-car" />
         </div>
-        {error ? <p className="form-error">{error}</p> : null}
+        <FormToast message={error} />
         {rideRequests.length ? (
           <div className="ride-request-stack">
             {rideRequests.slice(0, 2).map((rideRequest) => (
@@ -1666,6 +1854,7 @@ function VehicleBrand({
       <button className="outline-back" onClick={() => go("dashboard")} type="button">
         Voltar
       </button>
+      <FooterNote />
     </section>
   );
 }
@@ -1732,6 +1921,7 @@ function VehicleData({
         Voltar
       </button>
       <p className="security">▣ Suas informações estão protegidas e nunca serão compartilhadas.</p>
+      <FooterNote />
     </section>
   );
 }
@@ -1816,12 +2006,13 @@ function VehiclePhotos({
           </div>
         ))}
       </div>
-      {error ? <p className="form-error">{error}</p> : null}
+      <FormToast message={error} />
       <ActionButton onClick={() => go("vehicle-review")}>Enviar fotos</ActionButton>
       <button className="outline-back" onClick={() => go("vehicle-data")} type="button">
         Voltar
       </button>
       <p className="security">▣ Seus dados estão protegidos e usados apenas para verificação.</p>
+      <FooterNote />
     </section>
   );
 }
@@ -1893,7 +2084,7 @@ function VehicleReview({
         <span>✓ Fotos enviadas</span>
       </div>
       <div className="success-box">▣ Seu veículo está em análise. Em breve você receberá a aprovação.</div>
-      {error ? <p className="form-error">{error}</p> : null}
+      <FormToast message={error} />
       <ActionButton onClick={handleTrackStatus}>{isSubmitting ? "Salvando..." : "Acompanhar status"}</ActionButton>
       <ActionButton onClick={() => go("vehicle-photos")} secondary>
         Voltar
@@ -1903,12 +2094,14 @@ function VehicleReview({
         <span>☆ Processo rápido</span>
         <span>▤ Mais corridas, mais ganhos</span>
       </div>
+      <FooterNote />
     </section>
   );
 }
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("login");
+  const [resetContact, setResetContact] = useState<PasswordResetContact>({});
   const [signupStep, setSignupStep] = useState(1);
   const [showSplash, setShowSplash] = useState(true);
   const [driverToken, setDriverToken] = useState<string | undefined>(() => {
@@ -1948,6 +2141,10 @@ export default function Home() {
   const content = useMemo(() => {
     const go = setScreen;
     switch (screen) {
+      case "forgot-password":
+        return <ForgotPassword go={go} setResetContact={setResetContact} />;
+      case "forgot-success":
+        return <ForgotPasswordSuccess contact={resetContact} go={go} />;
       case "signup":
         return (
           <Signup
@@ -2022,6 +2219,7 @@ export default function Home() {
     driverToken,
     faceFile,
     resetFlow,
+    resetContact,
     screen,
     selectedBrand,
     setCnhBack,

@@ -165,6 +165,16 @@ export async function loginDriverAccount(input: { email?: string; whatsapp?: str
   return parseResponse<DriverAuthSession>(response);
 }
 
+export async function requestDriverPasswordReset(input: { email?: string; whatsapp?: string }) {
+  const response = await apiRequest("/auth/password/forgot", {
+    body: JSON.stringify(input),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  return parseResponse<{ email: string; whatsapp?: string | null }>(response);
+}
+
 export async function saveDriverProfile(
   token: string,
   input: {
