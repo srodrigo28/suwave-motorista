@@ -599,24 +599,47 @@ function maskedDateToIso(value: string) {
 function ActionButton({
   children,
   disabled = false,
+  iconDirection = "right",
   onClick,
   secondary = false,
 }: {
   children: React.ReactNode;
   disabled?: boolean;
+  iconDirection?: "left" | "right";
   onClick: () => void;
   secondary?: boolean;
 }) {
   return (
-    <button className={secondary ? "action secondary" : "action"} disabled={disabled} onClick={onClick} type="button">
+    <button
+      className={`${secondary ? "action secondary" : "action"} ${iconDirection === "left" ? "action-back" : ""}`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {iconDirection === "left" ? <ActionIcon direction="left" /> : null}
       {children}
-      <span aria-hidden="true" className="action-icon">
-        <svg fill="none" viewBox="0 0 24 24">
-          <path d="M5 12h13" />
-          <path d="m13 6 6 6-6 6" />
-        </svg>
-      </span>
+      {iconDirection === "right" ? <ActionIcon direction="right" /> : null}
     </button>
+  );
+}
+
+function ActionIcon({ direction }: { direction: "left" | "right" }) {
+  return (
+    <span aria-hidden="true" className="action-icon">
+      <svg fill="none" viewBox="0 0 24 24">
+        {direction === "left" ? (
+          <>
+            <path d="M19 12H6" />
+            <path d="m11 6-6 6 6 6" />
+          </>
+        ) : (
+          <>
+            <path d="M5 12h13" />
+            <path d="m13 6 6 6-6 6" />
+          </>
+        )}
+      </svg>
+    </span>
   );
 }
 
@@ -768,7 +791,7 @@ function ForgotPassword({
       <Field icon="whatsapp" inputMode="tel" label="WhatsApp" onChange={(value) => setWhatsapp(maskPhone(value))} value={whatsapp} />
       <FormToast message={message} />
       <ActionButton onClick={handleSubmit}>{isSubmitting ? "Enviando..." : "Redefinir senha"}</ActionButton>
-      <ActionButton onClick={() => go("login")} secondary>
+      <ActionButton iconDirection="left" onClick={() => go("login")} secondary>
         Voltar
       </ActionButton>
       <FooterNote />
@@ -838,7 +861,7 @@ function ForgotPasswordSuccess({
         </p>
       </div>
       <FormToast message={message} />
-      <ActionButton onClick={() => go("login")}>Voltar para entrar</ActionButton>
+      <ActionButton iconDirection="left" onClick={() => go("login")}>Voltar para entrar</ActionButton>
       <ActionButton disabled={isResending} onClick={handleResend} secondary>
         {isResending ? "Reenviando..." : "Reenviar link"}
       </ActionButton>
@@ -1223,6 +1246,16 @@ function FacePhoto({
     setIsCameraReady(false);
   }
 
+  function clearPreview() {
+    setPreviewUrl((currentUrl) => {
+      if (currentUrl) {
+        URL.revokeObjectURL(currentUrl);
+      }
+
+      return "";
+    });
+  }
+
   async function startCamera() {
     setError("");
     setCameraError("");
@@ -1234,6 +1267,7 @@ function FacePhoto({
 
     try {
       stopCamera();
+      clearPreview();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { facingMode: "user" },
@@ -1378,14 +1412,16 @@ function FacePhoto({
             width={1024}
           />
         )}
-        <span className="tip left">
+        <div className="face-oval" />
+      </div>
+      <div className="face-tips">
+        <span className="tip">
           <Icon name="spark" /> Boa iluminação
         </span>
-        <span className="tip right">
+        <span className="tip">
           <Icon name="user" /> Rosto centralizado
         </span>
-        <div className="face-oval" />
-        <span className="tip bottom">
+        <span className="tip">
           <Icon name="ban" /> Sem acessórios que cubram o rosto
         </span>
       </div>
@@ -1406,13 +1442,32 @@ function FacePhoto({
         type="file"
       />
       <FormToast message={error} />
-      <ActionButton disabled={isCameraActive && !isCameraReady} onClick={isCameraActive ? handleCaptureFace : startCamera}>
-        {isCameraActive ? "Tirar foto" : "Abrir câmera"}
-      </ActionButton>
-      <ActionButton onClick={handleNext}>Próximo</ActionButton>
-      <ActionButton onClick={() => fileInputRef.current?.click()} secondary>
-        Escolher foto
-      </ActionButton>
+      {isCameraActive ? (
+        <ActionButton disabled={!isCameraReady} onClick={handleCaptureFace}>
+          Tirar foto
+        </ActionButton>
+      ) : faceFile ? (
+        <>
+          <ActionButton onClick={handleNext}>Próximo</ActionButton>
+          <div className="face-retake-actions">
+            <button onClick={startCamera} type="button">
+              <Icon name="camera" />
+              Tirar outra
+            </button>
+            <button onClick={() => fileInputRef.current?.click()} type="button">
+              <Icon name="user" />
+              Escolher outra
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <ActionButton onClick={startCamera}>Abrir câmera</ActionButton>
+          <ActionButton onClick={() => fileInputRef.current?.click()} secondary>
+            Escolher foto
+          </ActionButton>
+        </>
+      )}
       <p className="security">▣ Suas fotos são protegidas e usadas apenas para verificação de segurança.</p>
       <FooterNote />
     </section>
@@ -1599,7 +1654,7 @@ function Cnh({
       <ActionButton disabled={isSubmitting} onClick={handleFinish}>
         {isSubmitting ? "Concluindo..." : "Concluir cadastro"}
       </ActionButton>
-      <ActionButton onClick={() => go("face")} secondary>
+      <ActionButton iconDirection="left" onClick={() => go("face")} secondary>
         Voltar
       </ActionButton>
       <FooterNote />
@@ -1629,7 +1684,7 @@ function Submitted({ go }: { go: (screen: Screen) => void }) {
       </div>
       <p className="calendar-line">▣ No MVP, a aprovação é simulada em até 10 minutos.</p>
       <ActionButton onClick={() => go("status")}>Acompanhar aprovação</ActionButton>
-      <ActionButton onClick={() => go("login")} secondary>
+      <ActionButton iconDirection="left" onClick={() => go("login")} secondary>
         Voltar ao login
       </ActionButton>
       <FooterNote />
@@ -2400,7 +2455,7 @@ function VehicleReview({
       <div className="success-box">▣ Seu veículo está em análise. Em breve você receberá a aprovação.</div>
       <FormToast message={error} />
       <ActionButton onClick={handleTrackStatus}>{isSubmitting ? "Salvando..." : "Acompanhar status"}</ActionButton>
-      <ActionButton onClick={() => go("vehicle-photos")} secondary>
+      <ActionButton iconDirection="left" onClick={() => go("vehicle-photos")} secondary>
         Voltar
       </ActionButton>
       <div className="benefits inline">

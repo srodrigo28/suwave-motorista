@@ -973,6 +973,19 @@ h2 {
   justify-self: end;
 }
 
+.action.action-back {
+  grid-template-columns: 20px 1fr 20px;
+}
+
+.action.action-back .action-icon {
+  justify-self: start;
+}
+
+.action.action-back::after {
+  content: "";
+  width: 20px;
+}
+
 .action .action-icon svg {
   height: 22px;
   stroke: currentColor;
@@ -1200,7 +1213,7 @@ h2 {
 }
 
 .face-screen h1 {
-  font-size: 43px;
+  font-size: clamp(34px, 9vw, 43px);
   line-height: 1.02;
   margin: 0 auto 8px;
   max-width: 410px;
@@ -1254,7 +1267,7 @@ h2 {
   cursor: pointer;
   display: block;
   height: auto;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   min-height: 0;
   overflow: hidden;
   padding: 0;
@@ -1264,6 +1277,7 @@ h2 {
 
 .face-reference-photo {
   display: block;
+  aspect-ratio: 16 / 10;
   height: auto;
   object-fit: contain;
   width: 100%;
@@ -1274,7 +1288,7 @@ h2 {
   background: #111;
   display: block;
   height: 100%;
-  min-height: 430px;
+  min-height: 320px;
   object-fit: cover;
   width: 100%;
 }
@@ -1284,7 +1298,7 @@ h2 {
 }
 
 .face-card.has-photo .face-preview-photo {
-  min-height: 430px;
+  min-height: 320px;
 }
 
 .face-capture-canvas {
@@ -1314,6 +1328,20 @@ h2 {
   line-height: 1.1;
   padding: 10px 12px;
   text-align: left;
+}
+
+.face-tips {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 12px;
+}
+
+.face-tips .tip {
+  justify-content: center;
+  min-height: 48px;
+  position: static;
+  width: auto;
 }
 
 .face-screen .tip svg {
@@ -1354,7 +1382,7 @@ h2 {
   display: flex;
   font-size: 14px;
   gap: 12px;
-  margin: 16px 0 14px;
+  margin: 12px 0 14px;
   padding: 12px 16px;
   text-align: left;
 }
@@ -1371,6 +1399,41 @@ h2 {
   height: 28px;
   justify-content: center;
   width: 28px;
+}
+
+.face-screen .action {
+  flex: 0 0 auto;
+  height: 58px;
+  margin-top: 10px;
+  min-height: 58px;
+}
+
+.face-retake-actions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.face-retake-actions button {
+  align-items: center;
+  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  display: grid;
+  font-size: 14px;
+  font-weight: 900;
+  gap: 7px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 44px;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.face-retake-actions button svg {
+  height: 17px;
+  width: 17px;
 }
 
 .face-screen .security {
@@ -1513,10 +1576,9 @@ h2 {
 .cnh-screen .upload-card {
   align-items: center;
   border-radius: 8px;
-  gap: 10px 14px;
-  grid-template-columns: 158px minmax(0, 1fr);
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
   margin-bottom: 16px;
-  min-height: 166px;
   padding: 16px;
   text-align: left;
 }
@@ -1529,6 +1591,7 @@ h2 {
   height: 88px;
   overflow: hidden;
   position: relative;
+  width: 100%;
 }
 
 .cnh-screen .doc-preview.cnh-front {
@@ -1637,8 +1700,9 @@ h2 {
 
 .cnh-screen .upload-card button {
   font-size: 17px;
-  grid-column: 2;
+  grid-column: 1 / -1;
   height: 52px;
+  width: 100%;
 }
 
 .cnh-screen .info-line {
@@ -2546,6 +2610,85 @@ h2 {
 
   .upload-card button {
     grid-column: auto;
+  }
+
+  .face-screen,
+  .cnh-screen {
+    padding-inline: 18px;
+  }
+
+  .face-flow-header {
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+  }
+
+  .face-flow-header p {
+    font-size: 15px;
+  }
+
+  .face-screen h1 {
+    font-size: 38px;
+  }
+
+  .face-screen .subtitle,
+  .cnh-screen .subtitle {
+    font-size: 18px;
+    margin-bottom: 16px;
+  }
+
+  .face-reference-photo,
+  .face-camera-video,
+  .face-preview-photo,
+  .face-card.has-photo .face-preview-photo {
+    min-height: 0;
+  }
+
+  .face-camera-video,
+  .face-preview-photo {
+    aspect-ratio: 4 / 3;
+  }
+
+  .face-tips {
+    grid-template-columns: 1fr;
+  }
+
+  .face-tips .tip {
+    min-height: 42px;
+  }
+
+  .face-retake-actions {
+    gap: 8px;
+  }
+
+  .face-retake-actions button {
+    font-size: 13px;
+    min-height: 42px;
+  }
+
+  .cnh-screen h1 {
+    font-size: 40px;
+  }
+
+  .cnh-screen .progress {
+    margin-bottom: 18px;
+  }
+
+  .cnh-screen .upload-card {
+    grid-template-columns: 1fr;
+  }
+
+  .cnh-screen .upload-card > span {
+    justify-self: stretch;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .cnh-screen .upload-card button {
+    grid-column: 1;
+  }
+
+  .cnh-screen .info-line {
+    align-items: flex-start;
+    font-size: 15px;
   }
 
   .floating-header {
