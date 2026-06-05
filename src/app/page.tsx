@@ -1241,11 +1241,6 @@ function FacePhoto({
 
       cameraStreamRef.current = stream;
       setIsCameraActive(true);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
     } catch {
       setCameraError("Não foi possível abrir a câmera. Verifique a permissão do navegador.");
     }
@@ -1323,6 +1318,21 @@ function FacePhoto({
       cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const stream = cameraStreamRef.current;
+
+    if (!isCameraActive || !video || !stream) {
+      return;
+    }
+
+    video.srcObject = stream;
+    void video.play().catch(() => {
+      setCameraError("A câmera abriu, mas o navegador não iniciou a prévia. Toque em Abrir câmera novamente.");
+      setIsCameraReady(false);
+    });
+  }, [isCameraActive]);
 
   useEffect(() => {
     return () => {
