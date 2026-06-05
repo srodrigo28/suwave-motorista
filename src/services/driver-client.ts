@@ -10,6 +10,18 @@ type ApiEnvelope<T> = {
   message?: string;
 };
 
+export class DriverApiError extends Error {
+  code?: string;
+  fields?: Record<string, unknown>;
+
+  constructor(message: string, code?: string, fields?: Record<string, unknown>) {
+    super(message);
+    this.name = "DriverApiError";
+    this.code = code;
+    this.fields = fields;
+  }
+}
+
 const fieldLabels: Record<string, string> = {
   accepted_terms: "aceite dos termos",
   birth_date: "data de nascimento",
@@ -41,22 +53,28 @@ function findValidationField(value: unknown): string | undefined {
   return undefined;
 }
 
-function apiErrorMessage(body: Record<string, unknown>) {
+function apiError(body: Record<string, unknown>) {
   const error = body.error && typeof body.error === "object" ? (body.error as Record<string, unknown>) : undefined;
   const validationField = findValidationField(error?.fields ?? body.errors);
+  const code = typeof error?.code === "string" ? error.code : undefined;
+  const fields = error?.fields && typeof error.fields === "object" ? (error.fields as Record<string, unknown>) : undefined;
 
   if (validationField) {
-    return `Verifique o campo ${fieldLabels[validationField]} e tente novamente.`;
+    return new DriverApiError(`Verifique o campo ${fieldLabels[validationField]} e tente novamente.`, code, fields);
   }
 
   const errorMessage = typeof error?.message === "string" ? error.message : undefined;
   const message = typeof body.message === "string" ? body.message : undefined;
 
-  if (message?.includes("semantic errors")) {
-    return "Alguns dados informados são inválidos. Revise o cadastro e tente novamente.";
+  if (code === "internal_error") {
+    return new DriverApiError("A API retornou erro interno. Verifique o deploy, migrations e logs do servidor.", code, fields);
   }
 
-  return errorMessage || message || "Não foi possível concluir a operação.";
+  if (message?.includes("semantic errors")) {
+    return new DriverApiError("Alguns dados informados são inválidos. Revise o cadastro e tente novamente.", code, fields);
+  }
+
+  return new DriverApiError(errorMessage || message || "Não foi possível concluir a operação.", code, fields);
 }
 
 export type DriverAuthSession = {
@@ -70,7 +88,7 @@ export type DriverAuthSession = {
 };
 
 export type UploadResult = {
-  storage_file_id?: string | null;
+  storage_file_id?: number | string | null;
   url: string;
 };
 
@@ -106,7 +124,7 @@ async function parseResponse<T>(response: Response) {
   const body = (await response.json().catch(() => ({}))) as Partial<ApiEnvelope<T>> & Record<string, unknown>;
 
   if (!response.ok) {
-    throw new Error(apiErrorMessage(body));
+    throw apiError(body);
   }
 
   return body.data as T;
@@ -207,7 +225,7 @@ export async function uploadDriverImage(token: string, file: File, context: "dri
 
 export async function saveDriverFacePhoto(token: string, upload: UploadResult) {
   const response = await apiRequest("/driver/photo/face", {
-    body: JSON.stringify({ storage_file_id: upload.storage_file_id, url: upload.url }),
+    body: JSON.stringify({ storage_file_id: normalizeStorageFileId(upload.storage_file_id), url: upload.url }),
     headers: authJsonHeaders(token),
     method: "POST",
   });
@@ -218,14 +236,18 @@ export async function saveDriverFacePhoto(token: string, upload: UploadResult) {
 export async function saveDriverCnh(
   token: string,
   input: {
-    cnh_back_file_id?: string | null;
+    cnh_back_file_id?: number | string | null;
     cnh_back_url: string;
-    cnh_front_file_id?: string | null;
+    cnh_front_file_id?: number | string | null;
     cnh_front_url: string;
   },
 ) {
   const response = await apiRequest("/driver/documents/cnh", {
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      ...input,
+      cnh_back_file_id: normalizeStorageFileId(input.cnh_back_file_id),
+      cnh_front_file_id: normalizeStorageFileId(input.cnh_front_file_id),
+    }),
     headers: authJsonHeaders(token),
     method: "POST",
   });
@@ -254,20 +276,20 @@ export async function saveDriverVehicle(
   token: string,
   input: {
     brand: string;
-    front_photo_file_id?: string | null;
+    front_photo_file_id?: number | string | null;
     front_photo_url?: string | null;
-    interior_photo_file_id?: string | null;
+    interior_photo_file_id?: number | string | null;
     interior_photo_url?: string | null;
     model: string;
     plate: string;
-    rear_photo_file_id?: string | null;
+    rear_photo_file_id?: number | string | null;
     rear_photo_url?: string | null;
-    side_photo_file_id?: string | null;
+    side_photo_file_id?: number | string | null;
     side_photo_url?: string | null;
   },
 ) {
   const response = await apiRequest("/driver/vehicle", {
-    body: JSON.stringify(input),
+    body: JSON.stringify(normalizeVehicleUploadIds(input)),
     headers: authJsonHeaders(token),
     method: "POST",
   });
@@ -280,20 +302,20 @@ export async function updateDriverVehicle(
   vehicleId: string,
   input: {
     brand: string;
-    front_photo_file_id?: string | null;
+    front_photo_file_id?: number | string | null;
     front_photo_url?: string | null;
-    interior_photo_file_id?: string | null;
+    interior_photo_file_id?: number | string | null;
     interior_photo_url?: string | null;
     model: string;
     plate: string;
-    rear_photo_file_id?: string | null;
+    rear_photo_file_id?: number | string | null;
     rear_photo_url?: string | null;
-    side_photo_file_id?: string | null;
+    side_photo_file_id?: number | string | null;
     side_photo_url?: string | null;
   },
 ) {
   const response = await apiRequest(`/driver/vehicle/${vehicleId}`, {
-    body: JSON.stringify(input),
+    body: JSON.stringify(normalizeVehicleUploadIds(input)),
     headers: authJsonHeaders(token),
     method: "PUT",
   });
@@ -366,5 +388,24 @@ function authJsonHeaders(token: string) {
   return {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
+  };
+}
+
+function normalizeStorageFileId(value: number | string | null | undefined) {
+  return value == null ? null : String(value);
+}
+
+function normalizeVehicleUploadIds<T extends {
+  front_photo_file_id?: number | string | null;
+  interior_photo_file_id?: number | string | null;
+  rear_photo_file_id?: number | string | null;
+  side_photo_file_id?: number | string | null;
+}>(input: T) {
+  return {
+    ...input,
+    front_photo_file_id: normalizeStorageFileId(input.front_photo_file_id),
+    interior_photo_file_id: normalizeStorageFileId(input.interior_photo_file_id),
+    rear_photo_file_id: normalizeStorageFileId(input.rear_photo_file_id),
+    side_photo_file_id: normalizeStorageFileId(input.side_photo_file_id),
   };
 }

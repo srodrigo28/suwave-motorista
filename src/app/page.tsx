@@ -6,6 +6,7 @@ import {
   getDriverReviewStatus,
   acceptDriverRideRequest,
   declineDriverRideRequest,
+  DriverApiError,
   loginDriverAccount,
   listDriverRideRequests,
   pingDriverLocation,
@@ -135,6 +136,45 @@ function Icon({ name }: { name: string }) {
         <svg {...common}>
           <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
           <circle cx="12" cy="12" r="2.5" />
+        </svg>
+      );
+    case "eye-off":
+      return (
+        <svg {...common}>
+          <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6a18.5 18.5 0 0 1-2.1 2.6" />
+          <path d="M9.9 9.9a2.5 2.5 0 0 0 3.5 3.5" />
+          <path d="M4 4l16 16" />
+          <path d="M9.4 17.5A10.8 10.8 0 0 1 2.5 12a18 18 0 0 1 3.2-3.7" />
+        </svg>
+      );
+    case "menu":
+      return (
+        <svg {...common}>
+          <path d="M4 7h16" />
+          <path d="M4 12h16" />
+          <path d="M4 17h16" />
+        </svg>
+      );
+    case "settings":
+      return (
+        <svg {...common}>
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+          <path d="M19.4 15a1.8 1.8 0 0 0 .4 2l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.8 1.8 0 0 0-2-.4 1.8 1.8 0 0 0-1 1.6V21a2 2 0 0 1-4 0v-.1a1.8 1.8 0 0 0-1-1.6 1.8 1.8 0 0 0-2 .4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.8 1.8 0 0 0 .4-2 1.8 1.8 0 0 0-1.6-1H3a2 2 0 0 1 0-4h.1a1.8 1.8 0 0 0 1.6-1 1.8 1.8 0 0 0-.4-2l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.8 1.8 0 0 0 2 .4 1.8 1.8 0 0 0 1-1.6V3a2 2 0 0 1 4 0v.1a1.8 1.8 0 0 0 1 1.6 1.8 1.8 0 0 0 2-.4l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.6 1h.1a2 2 0 0 1 0 4h-.1a1.8 1.8 0 0 0-1.6 1Z" />
+        </svg>
+      );
+    case "help":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.7 2.7 0 0 1 5.1 1.3c0 1.8-2.6 2.1-2.6 3.7" />
+          <path d="M12 17h.01" />
+        </svg>
+      );
+    case "close":
+      return (
+        <svg {...common}>
+          <path d="M18 6 6 18" />
+          <path d="m6 6 12 12" />
         </svg>
       );
     case "arrow-left":
@@ -320,6 +360,9 @@ function Field({
   type?: string;
   value?: string;
 }) {
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const inputType = secure ? (isPasswordVisible ? "text" : "password") : (type ?? "text");
+
   return (
     <label className="field">
       <span className="field-icon">
@@ -330,13 +373,18 @@ function Field({
         maxLength={maxLength}
         onChange={(event) => onChange?.(event.target.value)}
         placeholder={label}
-        type={type ?? (secure ? "password" : "text")}
+        type={inputType}
         value={value}
       />
       {secure ? (
-        <b className="field-eye">
-          <Icon name="eye" />
-        </b>
+        <button
+          aria-label={isPasswordVisible ? "Ocultar senha" : "Mostrar senha"}
+          className="field-eye"
+          onClick={() => setIsPasswordVisible((visible) => !visible)}
+          type="button"
+        >
+          <Icon name={isPasswordVisible ? "eye-off" : "eye"} />
+        </button>
       ) : null}
     </label>
   );
@@ -507,9 +555,14 @@ function ActionButton({
 function FooterNote() {
   return (
     <footer className="footer-note">
-      <span aria-hidden="true">
-        <Icon name="home" />
-      </span>
+      <Image
+        alt=""
+        aria-hidden="true"
+        className="login-footer-art"
+        height={95}
+        src="/motorista/inicio-rodape.png"
+        width={600}
+      />
       <p>Mobilidade pensada para cidades pequenas</p>
     </footer>
   );
@@ -547,15 +600,25 @@ function Login({
   }
 
   return (
-    <section className="scroll-screen center-screen">
-      <BrandLockup />
-      <div className="hero-car" aria-hidden="true">
-        <div className="town" />
-        <div className="car">
-          <span />
-        </div>
+    <section className="scroll-screen center-screen login-screen">
+      <Image
+        alt="SUWAVE Motorista"
+        className="login-logo"
+        height={150}
+        priority
+        src="/motorista/inicio-logo.png"
+        width={520}
+      />
+      <div className="login-hero" aria-hidden="true">
+        <Image
+          alt=""
+          className="login-hero-art"
+          height={425}
+          priority
+          src="/motorista/inicio-carro-cidade.png"
+          width={638}
+        />
       </div>
-      <h1>Dirija na sua cidade</h1>
       <Field icon="mail" label="E-mail ou WhatsApp" onChange={setIdentifier} value={identifier} />
       <Field icon="lock" label="Senha" onChange={setPassword} secure value={password} />
       <button className="link-button" type="button">
@@ -564,7 +627,7 @@ function Login({
       {error ? <p className="form-error">{error}</p> : null}
       <ActionButton onClick={handleLogin}>{isSubmitting ? "Entrando..." : "Entrar"}</ActionButton>
       <ActionButton onClick={() => go("signup")} secondary>
-        Cadastrar
+        Cadastrar como motorista
       </ActionButton>
       <FooterNote />
     </section>
@@ -923,14 +986,29 @@ function Cnh({
     setIsSubmitting(true);
     setError("");
     try {
-      const session = await registerDriverAccount({
-        birth_date: birthDateIso || undefined,
-        cpf,
-        email: signupForm.email.trim().toLowerCase(),
-        full_name: signupForm.full_name,
-        password: signupForm.password,
-        whatsapp,
-      });
+      const email = signupForm.email.trim().toLowerCase();
+      let session;
+
+      try {
+        session = await registerDriverAccount({
+          birth_date: birthDateIso || undefined,
+          cpf,
+          email,
+          full_name: signupForm.full_name,
+          password: signupForm.password,
+          whatsapp,
+        });
+      } catch (err) {
+        if (!(err instanceof DriverApiError) || !["email_already_exists", "cpf_already_exists", "whatsapp_already_exists"].includes(err.code ?? "")) {
+          throw err;
+        }
+
+        session = await loginDriverAccount({
+          email,
+          password: signupForm.password,
+        });
+      }
+
       localStorage.setItem("suwave-driver-token", session.access_token);
       onAuthenticated(session.access_token);
 
@@ -938,7 +1016,7 @@ function Cnh({
         birth_date: birthDateIso || undefined,
         cnpj,
         cpf,
-        email: signupForm.email.trim().toLowerCase(),
+        email,
         full_name: signupForm.full_name,
         phone: whatsapp,
         pix_account: signupForm.pix_account.trim(),
@@ -1070,6 +1148,16 @@ const reviewMissingLabels: Record<string, string> = {
   pix_key_type: "tipo de chave Pix",
 };
 
+const reviewApprovalWindowSeconds = 10 * 60;
+
+function formatReviewTime(seconds: number) {
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
 function Status({
   go,
   token,
@@ -1077,12 +1165,13 @@ function Status({
   go: (screen: Screen) => void;
   token?: string;
 }) {
-  const [secondsLeft, setSecondsLeft] = useState(9 * 60);
+  const [secondsLeft, setSecondsLeft] = useState(reviewApprovalWindowSeconds);
   const [statusText, setStatusText] = useState("EM_ANALISE");
   const [error, setError] = useState("");
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const minutesLeft = Math.ceil(secondsLeft / 60);
-  const progress = Math.max(0, Math.min(1, secondsLeft / (9 * 60)));
+  const timeLeft = formatReviewTime(secondsLeft);
+  const progress = Math.max(0, Math.min(1, secondsLeft / reviewApprovalWindowSeconds));
 
   useEffect(() => {
     if (!token) {
@@ -1143,7 +1232,10 @@ function Status({
         <span>min</span>
       </div>
       <h1>Cadastro em análise</h1>
-      <p className="subtitle">Estamos verificando seus dados. No MVP, a aprovação é simulada em até 10 minutos.</p>
+      <p className="review-time">
+        Faltam <strong>{timeLeft}</strong> para liberar
+      </p>
+      <p className="subtitle">Estamos verificando seus dados. A liberação automática segue a regra de 10 minutos.</p>
       {error ? <p className="form-error">{error}</p> : null}
       {missingFields.length ? (
         <p className="form-error">
@@ -1213,6 +1305,7 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
   const [rideRequests, setRideRequests] = useState<DriverRideRequest[]>([]);
   const [busyRideId, setBusyRideId] = useState<string | null>(null);
   const [rideFeedback, setRideFeedback] = useState("");
+  const [isDriverMenuOpen, setIsDriverMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!isOnline || !token) {
@@ -1326,12 +1419,19 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
         <span className="car-dot two" />
         <span className="car-dot three" />
       </div>
-      <header className="floating-header">
-        <BrandLockup compact />
-        <button type="button">♙</button>
-      </header>
       <div className="bottom-sheet">
-        <i />
+        <div className="sheet-handle-row">
+          <i />
+          <button
+            aria-expanded={isDriverMenuOpen}
+            aria-label="Abrir menu do motorista"
+            className="driver-menu-button"
+            onClick={() => setIsDriverMenuOpen(true)}
+            type="button"
+          >
+            <Icon name="menu" />
+          </button>
+        </div>
         <div className="sheet-title">
           <div>
             <h1>Dirija na sua cidade</h1>
@@ -1399,6 +1499,42 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
           <span>▤ Mais corridas, mais ganhos</span>
         </div>
       </div>
+      {isDriverMenuOpen ? (
+        <div className="driver-drawer-overlay" role="presentation" onClick={() => setIsDriverMenuOpen(false)}>
+          <aside className="driver-drawer" aria-label="Menu do motorista" onClick={(event) => event.stopPropagation()}>
+            <button
+              aria-label="Fechar menu"
+              className="driver-drawer-close"
+              onClick={() => setIsDriverMenuOpen(false)}
+              type="button"
+            >
+              <Icon name="close" />
+            </button>
+            <button type="button">
+              <Icon name="user" />
+              <span>Perfil</span>
+            </button>
+            <button type="button">
+              <Icon name="settings" />
+              <span>Configurações</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsDriverMenuOpen(false);
+                go("vehicle-brand");
+              }}
+              type="button"
+            >
+              <Icon name="car" />
+              <span>Veículo</span>
+            </button>
+            <button type="button">
+              <Icon name="help" />
+              <span>Ajuda</span>
+            </button>
+          </aside>
+        </div>
+      ) : null}
     </section>
   );
 }
