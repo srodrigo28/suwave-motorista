@@ -53,14 +53,36 @@ function findValidationField(value: unknown): string | undefined {
   return undefined;
 }
 
+function findValidationMessages(value: unknown): string[] {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => (typeof item === "string" ? [item] : findValidationMessages(item)));
+  }
+
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  return Object.values(value).flatMap(findValidationMessages);
+}
+
 function apiError(body: Record<string, unknown>) {
   const error = body.error && typeof body.error === "object" ? (body.error as Record<string, unknown>) : undefined;
-  const validationField = findValidationField(error?.fields ?? body.errors);
+  const validationData = error?.fields ?? body.errors;
+  const validationField = findValidationField(validationData);
   const code = typeof error?.code === "string" ? error.code : undefined;
   const fields = error?.fields && typeof error.fields === "object" ? (error.fields as Record<string, unknown>) : undefined;
 
   if (validationField) {
     return new DriverApiError(`Verifique o campo ${fieldLabels[validationField]} e tente novamente.`, code, fields);
+  }
+
+  const validationMessages = findValidationMessages(validationData);
+  if (validationMessages.length > 0) {
+    return new DriverApiError(`Revise os dados informados: ${validationMessages[0]}`, code, fields);
   }
 
   const errorMessage = typeof error?.message === "string" ? error.message : undefined;
