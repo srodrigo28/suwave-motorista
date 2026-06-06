@@ -911,6 +911,149 @@ h2 {
   text-align: left;
 }
 
+.install-overlay {
+  bottom: 0;
+  box-sizing: border-box;
+  display: none;
+  inset-inline: 0;
+  justify-content: center;
+  pointer-events: none;
+  position: fixed;
+  width: 100vw;
+  z-index: 60;
+}
+
+.install-sheet {
+  animation: installSheetIn 0.28s ease-out both;
+  background: #fff;
+  border: 1px solid #dfe5ec;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -24px 72px rgb(18 29 49 / 0.24);
+  box-sizing: border-box;
+  color: #101216;
+  max-width: 560px;
+  padding: 15px 18px max(18px, env(safe-area-inset-bottom));
+  pointer-events: auto;
+  position: relative;
+  width: 100%;
+}
+
+.install-sheet::before {
+  background: #d9dde4;
+  border-radius: 999px;
+  content: "";
+  display: block;
+  height: 5px;
+  margin: 0 auto 16px;
+  width: 48px;
+}
+
+.install-close {
+  background: #f0f3f7;
+  border: 0;
+  border-radius: 50%;
+  color: #343941;
+  display: grid;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  width: 32px;
+}
+
+.install-close svg {
+  height: 16px;
+  width: 16px;
+}
+
+.install-lead {
+  align-items: center;
+  display: grid;
+  gap: 13px;
+  grid-template-columns: 54px minmax(0, 1fr);
+  padding-right: 38px;
+}
+
+.install-lead strong {
+  color: #0b2536;
+  display: block;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.1;
+  margin-bottom: 5px;
+}
+
+.install-lead p,
+.install-hint {
+  color: #58616d;
+  font-size: 13px;
+  letter-spacing: 0;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.install-mark {
+  background: #ffc400;
+  border-radius: 16px;
+  box-shadow: 0 9px 24px rgb(17 20 24 / 0.18);
+  display: block;
+  height: 54px;
+  overflow: hidden;
+  position: relative;
+  width: 54px;
+}
+
+.install-mark img {
+  object-fit: contain;
+  padding: 6px;
+}
+
+.install-hint {
+  background: #f5f7fb;
+  border: 1px solid #e6ebf3;
+  border-radius: 14px;
+  margin-top: 13px;
+  padding: 10px 12px;
+}
+
+.install-actions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.16fr);
+  margin-top: 16px;
+}
+
+.install-actions button {
+  align-items: center;
+  background: #eef2f6;
+  border: 0;
+  border-radius: 8px;
+  color: #20242b;
+  display: flex;
+  font-size: 14px;
+  font-weight: 850;
+  gap: 9px;
+  height: 52px;
+  justify-content: center;
+  letter-spacing: 0;
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.install-actions button:last-child {
+  background: var(--suwave-yellow);
+  box-shadow: 0 13px 28px rgb(17 19 23 / 0.16);
+  color: var(--suwave-black);
+}
+
+.install-actions svg {
+  height: 18px;
+  width: 18px;
+}
+
 .link-button {
   background: transparent;
   border: 0;
@@ -2540,6 +2683,18 @@ h2 {
   }
 }
 
+@keyframes installSheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(36px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 560px) {
   .stage {
     padding: 0;
@@ -2566,6 +2721,14 @@ h2 {
   .scroll-screen,
   .map-screen {
     height: 100%;
+  }
+
+  .install-overlay {
+    display: flex;
+  }
+
+  .install-sheet {
+    max-width: none;
   }
 }
 
@@ -2698,6 +2861,29 @@ h2 {
 
   .bottom-sheet {
     padding-inline: 18px;
+  }
+
+  .install-sheet {
+    padding-inline: 14px;
+  }
+
+  .install-lead {
+    gap: 11px;
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .install-mark {
+    height: 50px;
+    width: 50px;
+  }
+
+  .install-actions {
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .install-actions button {
+    padding-inline: 10px;
   }
 
   .sheet-title {

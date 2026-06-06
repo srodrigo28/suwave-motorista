@@ -54,6 +54,11 @@ type PasswordResetContact = {
   whatsapp?: string;
 };
 
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
 const primarySteps = ["1", "2", "3", "4", "5"];
 const vehicleSteps = ["1", "2", "3", "4"];
 
@@ -115,6 +120,17 @@ function getBrandInitials(name: string) {
     .map((part) => part[0])
     .join("")
     .toUpperCase();
+}
+
+function isIOSDevice() {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
 }
 
 function Icon({ name }: { name: string }) {
@@ -297,6 +313,14 @@ function Icon({ name }: { name: string }) {
           <path d="m9 12 2 2 4-5" />
         </svg>
       );
+    case "download":
+      return (
+        <svg {...common}>
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M5 21h14" />
+        </svg>
+      );
     default:
       return (
         <svg {...common}>
@@ -330,6 +354,65 @@ function Splash() {
         sizes="100vw"
         src="/motorista/splash.png"
       />
+    </div>
+  );
+}
+
+function InstallSheet({
+  canInstall,
+  isIOS,
+  onClose,
+  onInstall,
+}: {
+  canInstall: boolean;
+  isIOS: boolean;
+  onClose: () => void;
+  onInstall: () => void;
+}) {
+  return (
+    <div className="install-overlay">
+      <aside aria-label="Instalar SUWAVE Motorista" className="install-sheet">
+        <button
+          aria-label="Fechar convite de instalação"
+          className="install-close"
+          onClick={onClose}
+          type="button"
+        >
+          <Icon name="close" />
+        </button>
+        <div className="install-lead">
+          <span className="install-mark">
+            <Image
+              alt=""
+              fill
+              sizes="54px"
+              src="/motorista/inicio-logo.png"
+            />
+          </span>
+          <div>
+            <strong>Instalar SUWAVE Motorista</strong>
+            <p>Abra mais rápido e receba corridas como aplicativo no celular.</p>
+          </div>
+        </div>
+        {isIOS ? (
+          <p className="install-hint">
+            No iPhone, toque em Compartilhar e depois em Adicionar à Tela de Início.
+          </p>
+        ) : !canInstall ? (
+          <p className="install-hint">
+            Se o navegador não abrir a instalação, use o menu e toque em Instalar app.
+          </p>
+        ) : null}
+        <div className="install-actions">
+          <button onClick={onClose} type="button">
+            Agora não
+          </button>
+          <button onClick={onInstall} type="button">
+            <Icon name="download" />
+            {canInstall ? "Instalar" : "Entendi"}
+          </button>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -660,6 +743,19 @@ function FooterNote() {
   return null;
 }
 
+function driverAvailabilityMessage(conflicts: Partial<Record<"email" | "cpf" | "whatsapp", boolean>>) {
+  const blockedFields = [
+    conflicts.cpf ? "CPF" : "",
+    conflicts.whatsapp ? "WhatsApp" : "",
+  ].filter(Boolean);
+
+  if (blockedFields.length > 0) {
+    return `${blockedFields.join(" e ")} já cadastrado em outra conta SUWAVE. Entre com a conta correta ou fale com o suporte para atualizar seus dados.`;
+  }
+
+  return "";
+}
+
 function Login({
   go,
   onAuthenticated,
@@ -935,8 +1031,14 @@ function Signup({
   }
 
   async function validateAvailability(input: { cpf?: string; email?: string; whatsapp?: string }) {
-    await checkDriverAccountAvailability(input);
-    return true;
+    const availability = await checkDriverAccountAvailability(input);
+    const message = driverAvailabilityMessage(availability.conflicts);
+
+    if (availability.conflicts.cpf || availability.conflicts.whatsapp) {
+      throw new Error(message);
+    }
+
+    return message;
   }
 
   async function handleNextSignupStep() {
@@ -982,8 +1084,9 @@ function Signup({
     setIsCheckingAvailability(true);
     try {
       const email = form.email.trim().toLowerCase();
-      if (await validateAvailability({ cpf, email, whatsapp })) {
-        setError("");
+      const availabilityMessage = await validateAvailability({ cpf, email, whatsapp });
+      setError(availabilityMessage);
+      if (!availabilityMessage) {
         go("terms");
       }
     } catch (err) {
@@ -1498,6 +1601,7 @@ function Cnh({
   const frontInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
+  const [submitStep, setSubmitStep] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function handleUpload(file: File | undefined, side: "front" | "back") {
@@ -1530,6 +1634,7 @@ function Cnh({
     const whatsapp = onlyDigits(signupForm.whatsapp);
 
     setIsSubmitting(true);
+    setSubmitStep("Criando sua conta...");
     setError("");
     try {
       const email = signupForm.email.trim().toLowerCase();
@@ -1569,6 +1674,7 @@ function Cnh({
       localStorage.setItem("suwave-driver-token", session.access_token);
       onAuthenticated(session.access_token);
 
+      setSubmitStep("Salvando seus dados...");
       await saveDriverProfile(session.access_token, {
         birth_date: birthDateIso || undefined,
         cnpj,
@@ -1581,9 +1687,11 @@ function Cnh({
         pix_key_type: signupForm.pix_key_type,
       });
 
+      setSubmitStep("Enviando foto do rosto...");
       const faceUpload = await uploadDriverImage(session.access_token, faceFile, "driver_face");
       await saveDriverFacePhoto(session.access_token, faceUpload);
 
+      setSubmitStep("Enviando CNH...");
       const [cnhFrontUpload, cnhBackUpload] = await Promise.all([
         uploadDriverImage(session.access_token, cnhFront, "driver_cnh"),
         uploadDriverImage(session.access_token, cnhBack, "driver_cnh"),
@@ -1594,6 +1702,7 @@ function Cnh({
         cnh_front_file_id: cnhFrontUpload.storage_file_id,
         cnh_front_url: cnhFrontUpload.url,
       });
+      setSubmitStep("Enviando para análise...");
       await submitDriverReview(session.access_token);
       resetFlow();
       go("submitted");
@@ -1601,6 +1710,7 @@ function Cnh({
       setError(err instanceof Error ? err.message : "Não foi possível finalizar o cadastro.");
     } finally {
       setIsSubmitting(false);
+      setSubmitStep("");
     }
   }
 
@@ -1652,7 +1762,7 @@ function Cnh({
       <p className="info-line">ⓘ Verifique se todos os dados estão legíveis</p>
       <FormToast message={error} />
       <ActionButton disabled={isSubmitting} onClick={handleFinish}>
-        {isSubmitting ? "Concluindo..." : "Concluir cadastro"}
+        {isSubmitting ? submitStep || "Concluindo..." : "Concluir cadastro"}
       </ActionButton>
       <ActionButton iconDirection="left" onClick={() => go("face")} secondary>
         Voltar
@@ -2473,6 +2583,9 @@ export default function Home() {
   const [resetContact, setResetContact] = useState<PasswordResetContact>({});
   const [signupStep, setSignupStep] = useState(1);
   const [showSplash, setShowSplash] = useState(true);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [showInstallSheet, setShowInstallSheet] = useState(false);
+  const [isIOS] = useState(isIOSDevice);
   const [driverToken, setDriverToken] = useState<string | undefined>(() => {
     if (typeof window === "undefined") {
       return undefined;
@@ -2499,6 +2612,53 @@ export default function Home() {
     const timer = window.setTimeout(() => setShowSplash(false), 2300);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      ("standalone" in navigator &&
+        Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+    const isMobileViewport = window.matchMedia("(max-width: 560px)").matches;
+    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+
+    if (isStandalone || !isMobileViewport || !isTouchDevice) {
+      return;
+    }
+
+    const sheetTimer = window.setTimeout(() => setShowInstallSheet(true), 700);
+
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+      setShowInstallSheet(true);
+    };
+
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+      setShowInstallSheet(false);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleInstallPrompt);
+    window.addEventListener("appinstalled", handleInstalled);
+
+    return () => {
+      window.clearTimeout(sheetTimer);
+      window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
+      window.removeEventListener("appinstalled", handleInstalled);
+    };
+  }, []);
+
+  async function handleInstallApp() {
+    if (isIOS || !installPrompt) {
+      setShowInstallSheet(false);
+      return;
+    }
+
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+    setShowInstallSheet(false);
+  }
 
   useEffect(() => {
     localStorage.removeItem("suwave-driver-flow");
@@ -2616,6 +2776,14 @@ export default function Home() {
           {showSplash ? <Splash /> : null}
         </div>
       </section>
+      {showInstallSheet && !showSplash ? (
+        <InstallSheet
+          canInstall={Boolean(installPrompt)}
+          isIOS={isIOS}
+          onClose={() => setShowInstallSheet(false)}
+          onInstall={handleInstallApp}
+        />
+      ) : null}
     </main>
   );
 }
