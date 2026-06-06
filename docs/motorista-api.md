@@ -1219,7 +1219,7 @@ Ultima validacao registrada:
 26 passed em tests/test_driver.py tests/test_upload.py
 ```
 
-## Pendencias Para Evoluir
+## Updates motoristas
 [x] criar solicitacao real de corrida
 [x] criar tabela de ride_requests
 [x] vincular passageiro ao motorista que aceitar

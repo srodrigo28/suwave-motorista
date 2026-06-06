@@ -455,6 +455,7 @@ function Progress({
 }
 
 function Field({
+  disabled = false,
   inputMode,
   icon,
   label,
@@ -464,6 +465,7 @@ function Field({
   type,
   value,
 }: {
+  disabled?: boolean;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   icon: string;
   label: string;
@@ -477,11 +479,12 @@ function Field({
   const inputType = secure ? (isPasswordVisible ? "text" : "password") : (type ?? "text");
 
   return (
-    <label className="field">
+    <label className={`field ${disabled ? "is-disabled" : ""}`}>
       <span className="field-icon">
         <Icon name={icon} />
       </span>
       <input
+        disabled={disabled}
         inputMode={inputMode}
         maxLength={maxLength}
         onChange={(event) => onChange?.(event.target.value)}
@@ -833,6 +836,8 @@ function ForgotPassword({
   const [whatsapp, setWhatsapp] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const hasEmail = email.trim().length > 0;
+  const hasWhatsapp = onlyDigits(whatsapp).length > 0;
 
   async function handleSubmit() {
     setMessage("");
@@ -841,6 +846,11 @@ function ForgotPassword({
 
     if (!cleanEmail && !cleanWhatsapp) {
       setMessage("Informe seu e-mail ou WhatsApp para redefinir sua senha.");
+      return;
+    }
+
+    if (cleanEmail && cleanWhatsapp) {
+      setMessage("Escolha apenas e-mail ou WhatsApp para continuar.");
       return;
     }
 
@@ -883,8 +893,15 @@ function ForgotPassword({
       <div className="forgot-copy">
         <p>Informe seu e-mail ou WhatsApp para redefinir sua senha</p>
       </div>
-      <Field icon="mail" label="E-mail" onChange={setEmail} type="email" value={email} />
-      <Field icon="whatsapp" inputMode="tel" label="WhatsApp" onChange={(value) => setWhatsapp(maskPhone(value))} value={whatsapp} />
+      <Field disabled={hasWhatsapp} icon="mail" label="E-mail" onChange={setEmail} type="email" value={email} />
+      <Field
+        disabled={hasEmail}
+        icon="whatsapp"
+        inputMode="tel"
+        label="WhatsApp"
+        onChange={(value) => setWhatsapp(maskPhone(value))}
+        value={whatsapp}
+      />
       <FormToast message={message} />
       <ActionButton onClick={handleSubmit}>{isSubmitting ? "Enviando..." : "Redefinir senha"}</ActionButton>
       <ActionButton iconDirection="left" onClick={() => go("login")} secondary>

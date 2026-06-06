@@ -529,6 +529,17 @@ h2 {
   color: #7f8d9d;
 }
 
+.field.is-disabled {
+  background: #f4f4f4;
+  border-color: #e1e1e1;
+  color: #9a9a9a;
+  opacity: 0.72;
+}
+
+.field.is-disabled input {
+  cursor: not-allowed;
+}
+
 .field-eye {
   background: transparent;
   border: 0;
