@@ -149,6 +149,9 @@ export type DriverProfile = {
   email: string;
   status: string;
   is_online: boolean;
+  last_accuracy_meters?: number | null;
+  last_latitude?: number | null;
+  last_longitude?: number | null;
   vehicles: DriverVehicle[];
 };
 

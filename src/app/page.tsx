@@ -56,6 +56,80 @@ type PasswordResetContact = {
   whatsapp?: string;
 };
 
+type DriverMapLocation = {
+  accuracy_meters?: number | null;
+  latitude: number;
+  longitude: number;
+};
+
+type DriverMapPlace = {
+  label?: string | null;
+  locality?: string | null;
+  provider?: string;
+  region?: string | null;
+};
+
+type GoogleLatLngLiteral = {
+  lat: number;
+  lng: number;
+};
+
+type DriverMapLayer = "roadmap" | "satellite";
+
+type GoogleCircle = {
+  setCenter: (center: GoogleLatLngLiteral) => void;
+  setMap: (map: GoogleMap | null) => void;
+  setRadius: (radius: number) => void;
+};
+
+type GoogleMap = {
+  addListener: (eventName: string, handler: () => void) => unknown;
+  getZoom: () => number | undefined;
+  setCenter: (center: GoogleLatLngLiteral) => void;
+  setMapTypeId: (mapTypeId: DriverMapLayer) => void;
+  setZoom: (zoom: number) => void;
+};
+
+type GoogleMarker = {
+  setMap: (map: GoogleMap | null) => void;
+  setPosition: (position: GoogleLatLngLiteral) => void;
+};
+
+type GoogleMapsNamespace = {
+  Circle: new (options: {
+    center: GoogleLatLngLiteral;
+    fillColor: string;
+    fillOpacity: number;
+    map: GoogleMap;
+    radius: number;
+    strokeColor: string;
+    strokeOpacity: number;
+    strokeWeight: number;
+  }) => GoogleCircle;
+  Map: new (
+    element: HTMLElement,
+    options: {
+      center: GoogleLatLngLiteral;
+      clickableIcons: boolean;
+      disableDefaultUI: boolean;
+      fullscreenControl: boolean;
+      gestureHandling: string;
+      mapTypeId: DriverMapLayer;
+      mapTypeControl: boolean;
+      scaleControl: boolean;
+      streetViewControl: boolean;
+      zoom: number;
+      zoomControl: boolean;
+    },
+  ) => GoogleMap;
+  Marker: new (options: {
+    map: GoogleMap;
+    optimized: boolean;
+    position: GoogleLatLngLiteral;
+    title: string;
+  }) => GoogleMarker;
+};
+
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -63,6 +137,18 @@ type InstallPromptEvent = Event & {
 
 const primarySteps = ["1", "2", "3", "4", "5"];
 const vehicleSteps = ["1", "2", "3", "4"];
+const defaultDriverMapZoom = 16;
+const maxDriverMapZoom = 18;
+const minDriverMapZoom = 12;
+const defaultDriverMapLocation = {
+  accuracy_meters: 80,
+  latitude: -11.8604,
+  longitude: -55.5091,
+};
+const mapTileUrlTemplate =
+  process.env.NEXT_PUBLIC_MAP_TILE_URL_TEMPLATE || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
+let googleMapsScriptPromise: Promise<GoogleMapsNamespace> | null = null;
 
 const fallbackBrands: VehicleBrandOption[] = [
   { codigo: "gm", nome: "Chevrolet" },
@@ -321,6 +407,17 @@ function Icon({ name }: { name: string }) {
           <path d="M12 3v12" />
           <path d="m7 10 5 5 5-5" />
           <path d="M5 21h14" />
+        </svg>
+      );
+    case "locate":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3" />
+          <path d="M12 19v3" />
+          <path d="M2 12h3" />
+          <path d="M19 12h3" />
+          <circle cx="12" cy="12" r="7" />
         </svg>
       );
     default:
@@ -1967,6 +2064,287 @@ async function sendCurrentDriverLocation(token: string) {
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
   });
+  return {
+    accuracy_meters: position.coords.accuracy,
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  };
+}
+
+function getMapTileUrl(x: number, y: number, z: number) {
+  return mapTileUrlTemplate.replace("{x}", String(x)).replace("{y}", String(y)).replace("{z}", String(z));
+}
+
+function locationToTilePoint(location: DriverMapLocation, zoom: number) {
+  const scale = 2 ** zoom;
+  const latRad = (location.latitude * Math.PI) / 180;
+  return {
+    x: ((location.longitude + 180) / 360) * scale,
+    y: ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale,
+  };
+}
+
+function getMapTiles(location: DriverMapLocation, zoom: number) {
+  const center = locationToTilePoint(location, zoom);
+  const centerX = Math.floor(center.x);
+  const centerY = Math.floor(center.y);
+  const scale = 2 ** zoom;
+  const tiles = [];
+
+  for (let yOffset = -2; yOffset <= 2; yOffset += 1) {
+    for (let xOffset = -2; xOffset <= 2; xOffset += 1) {
+      const x = centerX + xOffset;
+      const y = Math.min(Math.max(centerY + yOffset, 0), scale - 1);
+      const wrappedX = ((x % scale) + scale) % scale;
+
+      tiles.push({
+        key: `${zoom}-${wrappedX}-${y}`,
+        left: `calc(50% + ${(x - center.x) * 256}px)`,
+        top: `calc(var(--map-focus-y) + ${(y - center.y) * 256}px)`,
+        url: getMapTileUrl(wrappedX, y, zoom),
+      });
+    }
+  }
+
+  return tiles;
+}
+
+function positionToDriverMapLocation(position: GeolocationPosition) {
+  return {
+    accuracy_meters: position.coords.accuracy,
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  };
+}
+
+async function fetchDriverMapPlace(location: DriverMapLocation) {
+  const params = new URLSearchParams({
+    lat: String(location.latitude),
+    lng: String(location.longitude),
+  });
+  const response = await fetch(`/api/maps/reverse?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error("Não foi possível consultar o mapa agora.");
+  }
+
+  return (await response.json()) as DriverMapPlace;
+}
+
+function formatDriverMapPlace(place: DriverMapPlace | null) {
+  if (!place) {
+    return "Brasil";
+  }
+
+  if (place.locality && place.region) {
+    return `${place.locality}, ${place.region}`;
+  }
+
+  return place.label ?? place.locality ?? place.region ?? "Brasil";
+}
+
+function getLoadedGoogleMaps() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return (window as Window & { google?: { maps?: GoogleMapsNamespace } }).google?.maps ?? null;
+}
+
+function loadGoogleMaps() {
+  const loadedMaps = getLoadedGoogleMaps();
+
+  if (loadedMaps) {
+    return Promise.resolve(loadedMaps);
+  }
+
+  if (!googleMapsApiKey) {
+    return Promise.reject(new Error("Google Maps API key não configurada."));
+  }
+
+  if (googleMapsScriptPromise) {
+    return googleMapsScriptPromise;
+  }
+
+  googleMapsScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.getElementById("google-maps-sdk");
+
+    if (existingScript) {
+      existingScript.addEventListener("load", () => {
+        const maps = getLoadedGoogleMaps();
+        if (maps) {
+          resolve(maps);
+          return;
+        }
+        reject(new Error("Google Maps não carregou."));
+      });
+      existingScript.addEventListener("error", () => reject(new Error("Google Maps não carregou.")));
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.async = true;
+    script.defer = true;
+    script.id = "google-maps-sdk";
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&v=weekly&language=pt-BR&region=BR`;
+    script.addEventListener("load", () => {
+      const maps = getLoadedGoogleMaps();
+      if (maps) {
+        resolve(maps);
+        return;
+      }
+      reject(new Error("Google Maps não carregou."));
+    });
+    script.addEventListener("error", () => reject(new Error("Google Maps não carregou.")));
+
+    document.head.appendChild(script);
+  });
+
+  return googleMapsScriptPromise;
+}
+
+function OpenStreetMapLayer({
+  location,
+  zoom,
+}: {
+  location: DriverMapLocation;
+  zoom: number;
+}) {
+  const mapTiles = getMapTiles(location, zoom);
+
+  return (
+    <>
+      <div className="map-tile-layer" aria-hidden="true">
+        {mapTiles.map((tile) => (
+          <span
+            className="map-tile"
+            key={tile.key}
+            style={{
+              backgroundImage: `url(${tile.url})`,
+              left: tile.left,
+              top: tile.top,
+            }}
+          />
+        ))}
+      </div>
+      <span
+        className="location-accuracy"
+        style={
+          {
+            "--accuracy-size": `${Math.min(Math.max(location.accuracy_meters ?? 80, 55), 132)}px`,
+          } as React.CSSProperties
+        }
+      />
+      <span className="pin">
+        <span />
+      </span>
+      <span className="car-dot one" />
+      <span className="car-dot two" />
+      <span className="car-dot three" />
+    </>
+  );
+}
+
+function GoogleDriverMap({
+  layer,
+  location,
+  onFallback,
+  onZoomChange,
+  zoom,
+}: {
+  layer: DriverMapLayer;
+  location: DriverMapLocation;
+  onFallback: () => void;
+  onZoomChange: (zoom: number) => void;
+  zoom: number;
+}) {
+  const mapElementRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<GoogleMap | null>(null);
+  const markerRef = useRef<GoogleMarker | null>(null);
+  const accuracyRef = useRef<GoogleCircle | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initializeMap() {
+      try {
+        const maps = await loadGoogleMaps();
+        const element = mapElementRef.current;
+
+        if (cancelled || !element || mapRef.current) {
+          return;
+        }
+
+        const center = { lat: location.latitude, lng: location.longitude };
+        const map = new maps.Map(element, {
+          center,
+          clickableIcons: false,
+          disableDefaultUI: true,
+          fullscreenControl: false,
+          gestureHandling: "greedy",
+          mapTypeId: layer,
+          mapTypeControl: false,
+          scaleControl: false,
+          streetViewControl: false,
+          zoom,
+          zoomControl: false,
+        });
+
+        map.addListener("zoom_changed", () => {
+          const nextZoom = map.getZoom();
+          if (typeof nextZoom === "number") {
+            onZoomChange(Math.min(Math.max(nextZoom, minDriverMapZoom), maxDriverMapZoom));
+          }
+        });
+
+        mapRef.current = map;
+        markerRef.current = new maps.Marker({
+          map,
+          optimized: true,
+          position: center,
+          title: "Sua localização",
+        });
+        accuracyRef.current = new maps.Circle({
+          center,
+          fillColor: "#1a8dff",
+          fillOpacity: 0.12,
+          map,
+          radius: Math.max(location.accuracy_meters ?? 80, 35),
+          strokeColor: "#1a8dff",
+          strokeOpacity: 0.58,
+          strokeWeight: 2,
+        });
+      } catch {
+        if (!cancelled) {
+          onFallback();
+        }
+      }
+    }
+
+    initializeMap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [layer, location.accuracy_meters, location.latitude, location.longitude, onFallback, onZoomChange, zoom]);
+
+  useEffect(() => {
+    const center = { lat: location.latitude, lng: location.longitude };
+    mapRef.current?.setCenter(center);
+    markerRef.current?.setPosition(center);
+    accuracyRef.current?.setCenter(center);
+    accuracyRef.current?.setRadius(Math.max(location.accuracy_meters ?? 80, 35));
+  }, [location]);
+
+  useEffect(() => {
+    mapRef.current?.setZoom(zoom);
+  }, [zoom]);
+
+  useEffect(() => {
+    mapRef.current?.setMapTypeId(layer);
+  }, [layer]);
+
+  return <div className="google-map-host" ref={mapElementRef} />;
 }
 
 function formatRideDistance(distance?: number | null) {
@@ -1996,7 +2374,14 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
   const [rideFeedback, setRideFeedback] = useState("");
   const [isDriverMenuOpen, setIsDriverMenuOpen] = useState(false);
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
+  const [mapLocation, setMapLocation] = useState<DriverMapLocation>(defaultDriverMapLocation);
+  const [mapPlace, setMapPlace] = useState<DriverMapPlace | null>(null);
+  const [mapLayer, setMapLayer] = useState<DriverMapLayer>("roadmap");
+  const [mapZoom, setMapZoom] = useState(defaultDriverMapZoom);
+  const [shouldUseGoogleMaps, setShouldUseGoogleMaps] = useState(Boolean(googleMapsApiKey));
+  const [isLocating, setIsLocating] = useState(false);
   const shouldShowAddVehicle = driverProfile ? driverProfile.vehicles.length === 0 : false;
+  const mapPlaceLabel = formatDriverMapPlace(mapPlace);
 
   useEffect(() => {
     if (!isOnline || !token) {
@@ -2008,7 +2393,10 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
 
     async function syncLocation() {
       try {
-        await sendCurrentDriverLocation(activeToken);
+        const location = await sendCurrentDriverLocation(activeToken);
+        if (!cancelled) {
+          setMapLocation(location);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Não foi possível atualizar sua localização.");
@@ -2038,6 +2426,13 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
         if (!cancelled) {
           setDriverProfile(profile);
           setIsOnline(profile.is_online);
+          if (profile.last_latitude != null && profile.last_longitude != null) {
+            setMapLocation({
+              accuracy_meters: profile.last_accuracy_meters,
+              latitude: profile.last_latitude,
+              longitude: profile.last_longitude,
+            });
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -2052,6 +2447,50 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
       cancelled = true;
     };
   }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMapPlace() {
+      try {
+        const place = await fetchDriverMapPlace(mapLocation);
+        if (!cancelled) {
+          setMapPlace(place);
+        }
+      } catch {
+        if (!cancelled) {
+          setMapPlace(null);
+        }
+      }
+    }
+
+    loadMapPlace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mapLocation]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBrowserLocation() {
+      try {
+        const position = await getCurrentPosition();
+        if (!cancelled) {
+          setMapLocation(positionToDriverMapLocation(position));
+        }
+      } catch {
+        // Fallback keeps the dashboard usable when location permission is still pending.
+      }
+    }
+
+    loadBrowserLocation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOnline || !token) {
@@ -2100,7 +2539,8 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
         return;
       }
 
-      await sendCurrentDriverLocation(token);
+      const location = await sendCurrentDriverLocation(token);
+      setMapLocation(location);
       const availability = await setDriverOnline(token);
       setIsOnline(availability.is_online);
       setDriverProfile(availability.driver);
@@ -2108,6 +2548,25 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
       setError(err instanceof Error ? err.message : "Não foi possível alterar sua disponibilidade.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleLocateDriver() {
+    setIsLocating(true);
+    setError("");
+    try {
+      if (token) {
+        const location = await sendCurrentDriverLocation(token);
+        setMapLocation(location);
+        return;
+      }
+
+      const position = await getCurrentPosition();
+      setMapLocation(positionToDriverMapLocation(position));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível acessar sua localização.");
+    } finally {
+      setIsLocating(false);
     }
   }
 
@@ -2135,12 +2594,66 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
 
   return (
     <section className="map-screen">
-      <div className="map-art">
-        <span className="pin">●</span>
-        <span className="car-dot one" />
-        <span className="car-dot two" />
-        <span className="car-dot three" />
+      <div className="map-art" aria-label="Mapa da localização atual do motorista">
+        {shouldUseGoogleMaps ? (
+          <GoogleDriverMap
+            layer={mapLayer}
+            location={mapLocation}
+            onFallback={() => setShouldUseGoogleMaps(false)}
+            onZoomChange={setMapZoom}
+            zoom={mapZoom}
+          />
+        ) : (
+          <OpenStreetMapLayer location={mapLocation} zoom={mapZoom} />
+        )}
       </div>
+      <div className="map-controls" aria-label="Controles do mapa">
+        <button
+          aria-label="Aproximar mapa"
+          disabled={mapZoom >= maxDriverMapZoom}
+          onClick={() => setMapZoom((zoom) => Math.min(zoom + 1, maxDriverMapZoom))}
+          type="button"
+        >
+          +
+        </button>
+        <button
+          aria-label="Afastar mapa"
+          disabled={mapZoom <= minDriverMapZoom}
+          onClick={() => setMapZoom((zoom) => Math.max(zoom - 1, minDriverMapZoom))}
+          type="button"
+        >
+          -
+        </button>
+        <button
+          aria-label="Usar minha localização atual"
+          className={isLocating ? "is-loading" : ""}
+          disabled={isLocating}
+          onClick={handleLocateDriver}
+          type="button"
+        >
+          <Icon name="locate" />
+        </button>
+      </div>
+      {shouldUseGoogleMaps ? (
+        <div className="map-layer-control" aria-label="Selecionar camada do mapa">
+          <button
+            aria-pressed={mapLayer === "roadmap"}
+            className={mapLayer === "roadmap" ? "active" : ""}
+            onClick={() => setMapLayer("roadmap")}
+            type="button"
+          >
+            Mapa
+          </button>
+          <button
+            aria-pressed={mapLayer === "satellite"}
+            className={mapLayer === "satellite" ? "active" : ""}
+            onClick={() => setMapLayer("satellite")}
+            type="button"
+          >
+            Real
+          </button>
+        </div>
+      ) : null}
       <button
         aria-expanded={isDriverMenuOpen}
         aria-label="Abrir menu do motorista"
@@ -2155,7 +2668,10 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
           <i />
         </div>
         <div className="sheet-title">
-          <div aria-hidden="true" />
+          <div className="map-location-copy">
+            <span>{isOnline ? "Disponível em" : "Localização atual"}</span>
+            <strong>{mapPlaceLabel}</strong>
+          </div>
           <div className="mini-car" />
         </div>
         <FormToast message={error} />

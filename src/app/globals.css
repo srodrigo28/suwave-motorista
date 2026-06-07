@@ -1962,45 +1962,94 @@ h2 {
   height: calc(100% - 58px);
   overflow: hidden;
   position: relative;
+  --map-focus-y: 34%;
 }
 
 .map-art {
-  background:
-    linear-gradient(28deg, transparent 48%, #edf2f3 49% 51%, transparent 52%),
-    linear-gradient(118deg, transparent 48%, #edf2f3 49% 51%, transparent 52%),
-    linear-gradient(90deg, transparent 48%, #edf2f3 49% 51%, transparent 52%),
-    radial-gradient(circle at 16% 74%, #d7efd8, transparent 18%),
-    radial-gradient(circle at 80% 66%, #d6eff9, transparent 16%),
-    #f8fbfb;
+  background: #edf4f4;
   inset: 0;
+  overflow: hidden;
+  position: absolute;
+}
+
+.map-tile-layer {
+  filter: saturate(0.72) contrast(0.92) brightness(1.08);
+  inset: 0;
+  opacity: 0.92;
+  position: absolute;
+}
+
+.map-tile {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 256px 256px;
+  display: block;
+  height: 256px;
+  position: absolute;
+  width: 256px;
+}
+
+.google-map-host {
+  inset: 0;
+  position: absolute;
+}
+
+.google-map-host div {
+  outline: 0;
+}
+
+.map-art::after {
+  background:
+    linear-gradient(180deg, rgb(248 251 251 / 0.2), rgb(185 225 223 / 0.36) 72%, rgb(185 225 223 / 0.52)),
+    radial-gradient(circle at 50% var(--map-focus-y), transparent 0 110px, rgb(248 251 251 / 0.2) 210px),
+    rgb(255 255 255 / 0.2);
+  content: "";
+  inset: 0;
+  pointer-events: none;
   position: absolute;
 }
 
 .pin {
   align-items: center;
   background: var(--ink);
-  border-radius: 50% 50% 54% 54%;
-  color: #1a8dff;
-  display: flex;
-  font-size: 58px;
+  border: 1px solid rgb(255 255 255 / 0.32);
+  border-radius: 50%;
+  box-shadow:
+    0 16px 28px rgb(6 56 77 / 0.22),
+    inset 0 -12px 0 rgb(0 0 0 / 0.06);
+  display: grid;
   height: 92px;
   justify-content: center;
   left: 50%;
   position: absolute;
-  top: 33%;
-  transform: translate(-50%, -50%) rotate(45deg);
+  top: var(--map-focus-y);
+  transform: translate(-50%, -50%);
   width: 92px;
+  z-index: 2;
 }
 
-.pin::after {
+.pin span {
+  background: #1a8dff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgb(26 141 255 / 0.16);
+  display: block;
+  height: 24px;
+  width: 24px;
+}
+
+.location-accuracy {
   border: 2px solid #80c2ff;
   border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.42);
   content: "";
-  height: 88px;
-  left: 30px;
+  height: var(--accuracy-size);
+  left: 50%;
+  pointer-events: none;
   position: absolute;
-  top: 30px;
-  width: 88px;
+  top: var(--map-focus-y);
+  transform: translate(-50%, 14px);
+  width: var(--accuracy-size);
+  z-index: 1;
 }
 
 .car-dot {
@@ -2029,6 +2078,79 @@ h2 {
   bottom: 33%;
   left: 20%;
   transform: rotate(35deg);
+}
+
+.map-controls {
+  display: grid;
+  gap: 8px;
+  position: absolute;
+  right: 20px;
+  top: 10px;
+  z-index: 8;
+}
+
+.map-controls button {
+  align-items: center;
+  background: #fff;
+  border: 1.5px solid rgb(8 8 8 / 0.86);
+  border-radius: 50%;
+  box-shadow: 0 10px 22px rgb(12 42 58 / 0.12);
+  color: var(--suwave-black);
+  display: grid;
+  font-size: 28px;
+  font-weight: 900;
+  height: 46px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 46px;
+}
+
+.map-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.map-controls svg {
+  height: 22px;
+  width: 22px;
+}
+
+.map-controls .is-loading svg {
+  animation: locateSpin 0.9s linear infinite;
+}
+
+.map-layer-control {
+  background: rgb(255 255 255 / 0.92);
+  border: 1px solid rgb(8 8 8 / 0.18);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgb(12 42 58 / 0.14);
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  left: 78px;
+  padding: 4px;
+  position: absolute;
+  top: 10px;
+  width: 148px;
+  z-index: 8;
+}
+
+.map-layer-control button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: #2c4351;
+  font-size: 13px;
+  font-weight: 900;
+  height: 36px;
+  letter-spacing: 0;
+  padding: 0 10px;
+}
+
+.map-layer-control button.active {
+  background: var(--suwave-yellow);
+  color: var(--suwave-black);
 }
 
 .floating-header,
@@ -2119,7 +2241,7 @@ h2 {
   left: 20px;
   padding: 0;
   position: absolute;
-  top: 40px;
+  top: 10px;
   width: 48px;
   z-index: 8;
 }
@@ -2197,6 +2319,36 @@ h2 {
 
 .sheet-title h1 {
   font-size: 43px;
+}
+
+.map-location-copy {
+  align-self: center;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  text-align: left;
+}
+
+.map-location-copy span {
+  color: #607381;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.map-location-copy strong {
+  color: var(--ink);
+  display: block;
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1.08;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sheet-title p,
@@ -2705,6 +2857,12 @@ h2 {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes locateSpin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
