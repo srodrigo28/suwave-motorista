@@ -2094,8 +2094,8 @@ h2 {
 
 .sheet-handle-row {
   align-items: center;
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  display: flex;
+  justify-content: center;
   margin: 0 0 22px;
 }
 
@@ -2104,8 +2104,6 @@ h2 {
   border-radius: 999px;
   display: block;
   height: 7px;
-  grid-column: 2;
-  justify-self: center;
   width: 62px;
 }
 
@@ -2118,8 +2116,12 @@ h2 {
   display: grid;
   height: 48px;
   justify-items: center;
+  left: 20px;
   padding: 0;
+  position: absolute;
+  top: 40px;
   width: 48px;
+  z-index: 8;
 }
 
 .driver-menu-button svg {
@@ -2131,8 +2133,8 @@ h2 {
   background: rgb(5 24 36 / 0.28);
   display: flex;
   inset: 0;
-  justify-content: flex-end;
-  padding: 82px 18px 18px;
+  justify-content: flex-start;
+  padding: 96px 18px 18px 20px;
   position: absolute;
   z-index: 25;
 }

@@ -8,6 +8,7 @@ import {
   checkDriverAccountAvailability,
   declineDriverRideRequest,
   DriverApiError,
+  getDriverProfile,
   getDriverTerms,
   loginDriverAccount,
   listDriverRideRequests,
@@ -22,6 +23,7 @@ import {
   setDriverOnline,
   submitDriverReview,
   uploadDriverImage,
+  type DriverProfile,
   type DriverRideRequest,
   type DriverTerms,
 } from "@/services/driver-client";
@@ -1542,7 +1544,7 @@ function FacePhoto({
           <Icon name="user" /> Rosto centralizado
         </span>
         <span className="tip">
-          <Icon name="ban" /> Sem acessórios que cubram o rosto
+          <Icon name="ban" /> Sem acessórios
         </span>
       </div>
       <canvas aria-hidden="true" className="face-capture-canvas" ref={canvasRef} />
@@ -1993,6 +1995,8 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
   const [busyRideId, setBusyRideId] = useState<string | null>(null);
   const [rideFeedback, setRideFeedback] = useState("");
   const [isDriverMenuOpen, setIsDriverMenuOpen] = useState(false);
+  const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
+  const shouldShowAddVehicle = driverProfile ? driverProfile.vehicles.length === 0 : false;
 
   useEffect(() => {
     if (!isOnline || !token) {
@@ -2019,6 +2023,35 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
       window.clearInterval(interval);
     };
   }, [isOnline, token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    const activeToken = token;
+    let cancelled = false;
+
+    async function loadDriverProfile() {
+      try {
+        const profile = await getDriverProfile(activeToken);
+        if (!cancelled) {
+          setDriverProfile(profile);
+          setIsOnline(profile.is_online);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Não foi possível carregar seus veículos.");
+        }
+      }
+    }
+
+    loadDriverProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!isOnline || !token) {
@@ -2062,6 +2095,7 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
       if (isOnline) {
         const availability = await setDriverOffline(token);
         setIsOnline(availability.is_online);
+        setDriverProfile(availability.driver);
         setRideRequests([]);
         return;
       }
@@ -2069,6 +2103,7 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
       await sendCurrentDriverLocation(token);
       const availability = await setDriverOnline(token);
       setIsOnline(availability.is_online);
+      setDriverProfile(availability.driver);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível alterar sua disponibilidade.");
     } finally {
@@ -2106,18 +2141,18 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
         <span className="car-dot two" />
         <span className="car-dot three" />
       </div>
+      <button
+        aria-expanded={isDriverMenuOpen}
+        aria-label="Abrir menu do motorista"
+        className="driver-menu-button"
+        onClick={() => setIsDriverMenuOpen(true)}
+        type="button"
+      >
+        <Icon name="menu" />
+      </button>
       <div className="bottom-sheet">
         <div className="sheet-handle-row">
           <i />
-          <button
-            aria-expanded={isDriverMenuOpen}
-            aria-label="Abrir menu do motorista"
-            className="driver-menu-button"
-            onClick={() => setIsDriverMenuOpen(true)}
-            type="button"
-          >
-            <Icon name="menu" />
-          </button>
         </div>
         <div className="sheet-title">
           <div aria-hidden="true" />
@@ -2174,9 +2209,11 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
         <ActionButton onClick={handleToggleOnline}>
           {isSubmitting ? "Atualizando..." : isOnline ? "Ficar offline" : "Online"}
         </ActionButton>
-        <ActionButton onClick={() => go("vehicle-brand")} secondary>
-          Adicionar veículo
-        </ActionButton>
+        {shouldShowAddVehicle ? (
+          <ActionButton onClick={() => go("vehicle-brand")} secondary>
+            Adicionar veículo
+          </ActionButton>
+        ) : null}
         <div className="benefits">
           <span>▣ Ganhe dirigindo com segurança</span>
           <span>☆ Você define seus horários</span>

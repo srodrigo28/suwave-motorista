@@ -121,6 +121,7 @@ export type UploadResult = {
 
 export type DriverReviewStatus = {
   approved: boolean;
+  driver: DriverProfile;
   seconds_remaining: number;
   status: string;
   missing: string[];
@@ -128,8 +129,27 @@ export type DriverReviewStatus = {
 
 export type DriverAvailability = {
   can_receive_rides: boolean;
+  driver: DriverProfile;
   is_online: boolean;
   missing: string[];
+};
+
+export type DriverVehicle = {
+  id: string;
+  brand: string;
+  model: string;
+  plate: string;
+  status: string;
+};
+
+export type DriverProfile = {
+  id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  status: string;
+  is_online: boolean;
+  vehicles: DriverVehicle[];
 };
 
 export type DriverRideRequest = {
@@ -224,6 +244,14 @@ export async function requestDriverPasswordReset(input: { email?: string; whatsa
 export async function getDriverTerms() {
   const response = await apiRequest("/driver/terms");
   return parseResponse<DriverTerms>(response);
+}
+
+export async function getDriverProfile(token: string) {
+  const response = await apiRequest("/driver/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return parseResponse<DriverProfile>(response);
 }
 
 export async function saveDriverProfile(
