@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FiArrowLeft, FiLogOut } from "react-icons/fi";
 import {
   getDriverReviewStatus,
   acceptDriverRideRequest,
@@ -134,6 +135,14 @@ type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
+
+function getStoredDriverToken() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return localStorage.getItem("suwave-driver-token") ?? undefined;
+}
 
 const primarySteps = ["1", "2", "3", "4", "5"];
 const vehicleSteps = ["1", "2", "3", "4"];
@@ -2365,7 +2374,15 @@ function formatRideTime(value: string) {
   return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string }) {
+function Dashboard({
+  go,
+  onLogout,
+  token,
+}: {
+  go: (screen: Screen) => void;
+  onLogout: () => void;
+  token?: string;
+}) {
   const [isOnline, setIsOnline] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2672,7 +2689,6 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
             <span>{isOnline ? "Disponível em" : "Localização atual"}</span>
             <strong>{mapPlaceLabel}</strong>
           </div>
-          <div className="mini-car" />
         </div>
         <FormToast message={error} />
         {rideRequests.length ? (
@@ -2747,6 +2763,14 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
             >
               <Icon name="close" />
             </button>
+            <div className="driver-drawer-brand" aria-hidden="true">
+              <Image
+                alt=""
+                height={425}
+                src="/motorista/inicio-carro-cidade.png"
+                width={638}
+              />
+            </div>
             <button type="button">
               <Icon name="user" />
               <span>Perfil</span>
@@ -2754,6 +2778,14 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
             <button type="button">
               <Icon name="settings" />
               <span>Configurações</span>
+            </button>
+            <button type="button">
+              <Icon name="locate" />
+              <span>Registrar uma rota</span>
+            </button>
+            <button type="button">
+              <Icon name="calendar" />
+              <span>Histórico de viagens</span>
             </button>
             <button
               onClick={() => {
@@ -2768,6 +2800,10 @@ function Dashboard({ go, token }: { go: (screen: Screen) => void; token?: string
             <button type="button">
               <Icon name="help" />
               <span>Ajuda</span>
+            </button>
+            <button className="driver-drawer-logout" onClick={onLogout} type="button">
+              <FiLogOut aria-hidden="true" />
+              <span>Sair</span>
             </button>
           </aside>
         </div>
@@ -2842,7 +2878,6 @@ function VehicleBrand({
       <AppHeader onBack={() => go("dashboard")} />
       <div className="title-row">
         <h1>Cadastrar veículo</h1>
-        <span>1/4</span>
       </div>
       <Progress current={1} total={vehicleSteps} />
       <h2>Informações do veículo</h2>
@@ -2926,11 +2961,11 @@ function BrandLogo({ name }: { name: string }) {
 function AppHeader({ onBack }: { onBack: () => void }) {
   return (
     <header className="app-header">
-      <button onClick={onBack} type="button">
-        ←
+      <button aria-label="Voltar" className="app-header-back" onClick={onBack} type="button">
+        <FiArrowLeft aria-hidden="true" />
       </button>
       <BrandLockup compact />
-      <button type="button">♙</button>
+      <button aria-label="Perfil do motorista" className="app-header-profile" type="button">♙</button>
     </header>
   );
 }
@@ -3149,19 +3184,14 @@ function VehicleReview({
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>("login");
+  const [screen, setScreen] = useState<Screen>(() => (getStoredDriverToken() ? "dashboard" : "login"));
   const [resetContact, setResetContact] = useState<PasswordResetContact>({});
   const [signupStep, setSignupStep] = useState(1);
   const [showSplash, setShowSplash] = useState(true);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [showInstallSheet, setShowInstallSheet] = useState(false);
   const [isIOS] = useState(isIOSDevice);
-  const [driverToken, setDriverToken] = useState<string | undefined>(() => {
-    if (typeof window === "undefined") {
-      return undefined;
-    }
-    return localStorage.getItem("suwave-driver-token") ?? undefined;
-  });
+  const [driverToken, setDriverToken] = useState<string | undefined>(getStoredDriverToken);
   const signupForm = useDriverFlowStore((state) => state.signupForm);
   const setSignupForm = useDriverFlowStore((state) => state.setSignupForm);
   const cnhFront = useDriverFlowStore((state) => state.cnhFront);
@@ -3230,6 +3260,12 @@ export default function Home() {
     setShowInstallSheet(false);
   }
 
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("suwave-driver-token");
+    setDriverToken(undefined);
+    setScreen("login");
+  }, []);
+
   useEffect(() => {
     localStorage.removeItem("suwave-driver-flow");
     localStorage.removeItem("suwave-driver-flow-v2");
@@ -3287,7 +3323,7 @@ export default function Home() {
       case "status":
         return <Status go={go} token={driverToken} />;
       case "dashboard":
-        return <Dashboard go={go} token={driverToken} />;
+        return <Dashboard go={go} onLogout={handleLogout} token={driverToken} />;
       case "vehicle-brand":
         return <VehicleBrand go={go} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} />;
       case "vehicle-data":
@@ -3319,6 +3355,7 @@ export default function Home() {
     cnhFront,
     driverToken,
     faceFile,
+    handleLogout,
     resetFlow,
     resetContact,
     screen,
