@@ -3184,14 +3184,14 @@ function VehicleReview({
 }
 
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>(() => (getStoredDriverToken() ? "dashboard" : "login"));
+  const [screen, setScreen] = useState<Screen>("login");
   const [resetContact, setResetContact] = useState<PasswordResetContact>({});
   const [signupStep, setSignupStep] = useState(1);
   const [showSplash, setShowSplash] = useState(true);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [showInstallSheet, setShowInstallSheet] = useState(false);
   const [isIOS] = useState(isIOSDevice);
-  const [driverToken, setDriverToken] = useState<string | undefined>(getStoredDriverToken);
+  const [driverToken, setDriverToken] = useState<string | undefined>();
   const signupForm = useDriverFlowStore((state) => state.signupForm);
   const setSignupForm = useDriverFlowStore((state) => state.setSignupForm);
   const cnhFront = useDriverFlowStore((state) => state.cnhFront);
@@ -3211,6 +3211,19 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 2300);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const restoreTimer = window.setTimeout(() => {
+      const storedToken = getStoredDriverToken();
+
+      if (storedToken) {
+        setDriverToken(storedToken);
+        setScreen("dashboard");
+      }
+    }, 0);
+
+    return () => window.clearTimeout(restoreTimer);
   }, []);
 
   useEffect(() => {
