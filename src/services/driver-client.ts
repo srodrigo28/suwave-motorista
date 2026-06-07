@@ -137,16 +137,31 @@ export type DriverAvailability = {
 export type DriverVehicle = {
   id: string;
   brand: string;
+  color?: string | null;
+  front_photo_url?: string | null;
+  interior_photo_url?: string | null;
   model: string;
   plate: string;
+  rear_photo_url?: string | null;
+  side_photo_url?: string | null;
   status: string;
+  year?: string | number | null;
 };
 
 export type DriverProfile = {
+  documents?: {
+    cnh_back_url?: string | null;
+    cnh_front_url?: string | null;
+    face_photo_url?: string | null;
+  } | null;
+  face_photo_url?: string | null;
   id: string;
   user_id: string;
   full_name: string;
   email: string;
+  phone?: string | null;
+  pix_account?: string | null;
+  pix_key_type?: string | null;
   status: string;
   is_online: boolean;
   last_accuracy_meters?: number | null;
@@ -168,6 +183,48 @@ export type DriverRideRequest = {
   requested_at: string;
   requested_seats: number;
   status: "PROCURANDO" | "SEM_MOTORISTA" | "ACEITA" | "RECUSADA";
+};
+
+export type DriverRouteCoordinate = {
+  lat: number;
+  lng: number;
+};
+
+export type DriverPlannedTrip = {
+  id: string;
+  driver_id: string;
+  origin_latitude: number;
+  origin_longitude: number;
+  origin_label?: string | null;
+  destination_latitude: number;
+  destination_longitude: number;
+  destination_label: string;
+  departure_date: string;
+  return_date: string;
+  outbound_distance_km: number;
+  return_distance_km: number;
+  total_distance_km: number;
+  duration_seconds: number;
+  route_geometry?: DriverRouteCoordinate[] | null;
+  status: "ATIVA" | "CANCELADA" | "CONCLUIDA";
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateDriverTripInput = {
+  origin_latitude: number;
+  origin_longitude: number;
+  origin_label?: string | null;
+  destination_latitude: number;
+  destination_longitude: number;
+  destination_label: string;
+  departure_date: string;
+  return_date: string;
+  outbound_distance_km: number;
+  return_distance_km: number;
+  total_distance_km: number;
+  duration_seconds: number;
+  route_geometry?: DriverRouteCoordinate[] | null;
 };
 
 export type DriverTerms = {
@@ -476,6 +533,24 @@ export async function declineDriverRideRequest(token: string, rideRequestId: str
   });
 
   return parseResponse<DriverRideRequest>(response);
+}
+
+export async function listDriverTrips(token: string) {
+  const response = await apiRequest("/driver/trips", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return parseResponse<DriverPlannedTrip[]>(response);
+}
+
+export async function createDriverTrip(token: string, input: CreateDriverTripInput) {
+  const response = await apiRequest("/driver/trips", {
+    body: JSON.stringify(input),
+    headers: authJsonHeaders(token),
+    method: "POST",
+  });
+
+  return parseResponse<DriverPlannedTrip>(response);
 }
 
 function authJsonHeaders(token: string) {

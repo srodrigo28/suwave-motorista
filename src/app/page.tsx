@@ -2,17 +2,19 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FiArrowLeft, FiLogOut } from "react-icons/fi";
+import { FiArrowLeft, FiCamera, FiCheckCircle, FiChevronRight, FiEdit3, FiLogOut, FiRefreshCw } from "react-icons/fi";
 import {
   getDriverReviewStatus,
   acceptDriverRideRequest,
   checkDriverAccountAvailability,
+  createDriverTrip,
   declineDriverRideRequest,
   DriverApiError,
   getDriverProfile,
   getDriverTerms,
   loginDriverAccount,
   listDriverRideRequests,
+  listDriverTrips,
   pingDriverLocation,
   registerDriverAccount,
   requestDriverPasswordReset,
@@ -24,6 +26,7 @@ import {
   setDriverOnline,
   submitDriverReview,
   uploadDriverImage,
+  type DriverPlannedTrip,
   type DriverProfile,
   type DriverRideRequest,
   type DriverTerms,
@@ -47,6 +50,9 @@ type Screen =
   | "submitted"
   | "status"
   | "dashboard"
+  | "profile"
+  | "register-trip"
+  | "trip-history"
   | "vehicle-brand"
   | "vehicle-data"
   | "vehicle-photos"
@@ -70,6 +76,29 @@ type DriverMapPlace = {
   region?: string | null;
 };
 
+type DriverRoutePlace = {
+  id: string;
+  label: string;
+  lat: number;
+  lng: number;
+  locality?: string;
+  region?: string;
+};
+
+type DriverRouteCoordinate = {
+  lat: number;
+  lng: number;
+};
+
+type DriverRouteSummary = {
+  distanceKm: number;
+  distanceLabel: string;
+  durationLabel: string;
+  durationSeconds: number;
+  geometry: DriverRouteCoordinate[];
+  provider: string;
+};
+
 type GoogleLatLngLiteral = {
   lat: number;
   lng: number;
@@ -83,8 +112,13 @@ type GoogleCircle = {
   setRadius: (radius: number) => void;
 };
 
+type GoogleLatLngBounds = {
+  extend: (point: GoogleLatLngLiteral) => void;
+};
+
 type GoogleMap = {
   addListener: (eventName: string, handler: () => void) => unknown;
+  fitBounds: (bounds: GoogleLatLngBounds, padding?: number) => void;
   getZoom: () => number | undefined;
   setCenter: (center: GoogleLatLngLiteral) => void;
   setMapTypeId: (mapTypeId: DriverMapLayer) => void;
@@ -94,6 +128,11 @@ type GoogleMap = {
 type GoogleMarker = {
   setMap: (map: GoogleMap | null) => void;
   setPosition: (position: GoogleLatLngLiteral) => void;
+};
+
+type GooglePolyline = {
+  setMap: (map: GoogleMap | null) => void;
+  setPath: (path: GoogleLatLngLiteral[]) => void;
 };
 
 type GoogleMapsNamespace = {
@@ -123,12 +162,21 @@ type GoogleMapsNamespace = {
       zoomControl: boolean;
     },
   ) => GoogleMap;
+  LatLngBounds: new () => GoogleLatLngBounds;
   Marker: new (options: {
     map: GoogleMap;
-    optimized: boolean;
+    optimized?: boolean;
     position: GoogleLatLngLiteral;
     title: string;
   }) => GoogleMarker;
+  Polyline: new (options: {
+    geodesic: boolean;
+    map: GoogleMap;
+    path: GoogleLatLngLiteral[];
+    strokeColor: string;
+    strokeOpacity: number;
+    strokeWeight: number;
+  }) => GooglePolyline;
 };
 
 type InstallPromptEvent = Event & {
@@ -401,6 +449,17 @@ function Icon({ name }: { name: string }) {
           <path d="M6 16h12M7 16l1.4-5.2A2.5 2.5 0 0 1 10.8 9h2.4a2.5 2.5 0 0 1 2.4 1.8L17 16" />
           <circle cx="8" cy="17" r="1.5" />
           <circle cx="16" cy="17" r="1.5" />
+        </svg>
+      );
+    case "road":
+      return (
+        <svg {...common}>
+          <path d="M8 21 10 3" />
+          <path d="m14 3 2 18" />
+          <path d="M12 5v3" />
+          <path d="M12 11v3" />
+          <path d="M12 17v2" />
+          <path d="M4 21h16" />
         </svg>
       );
     case "shield":
@@ -2140,6 +2199,31 @@ async function fetchDriverMapPlace(location: DriverMapLocation) {
   return (await response.json()) as DriverMapPlace;
 }
 
+async function searchDriverRoutePlaces(query: string) {
+  const response = await fetch(`/api/maps/search?q=${encodeURIComponent(query)}`);
+
+  if (!response.ok) {
+    throw new Error("Não foi possível buscar destinos agora.");
+  }
+
+  const body = (await response.json()) as { places?: DriverRoutePlace[] };
+  return body.places ?? [];
+}
+
+async function fetchDriverRoute(origin: DriverRouteCoordinate, destination: DriverRouteCoordinate) {
+  const response = await fetch("/api/maps/route", {
+    body: JSON.stringify({ destination, origin }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error("Não foi possível calcular a rota agora.");
+  }
+
+  return (await response.json()) as DriverRouteSummary;
+}
+
 function formatDriverMapPlace(place: DriverMapPlace | null) {
   if (!place) {
     return "Brasil";
@@ -2150,6 +2234,90 @@ function formatDriverMapPlace(place: DriverMapPlace | null) {
   }
 
   return place.label ?? place.locality ?? place.region ?? "Brasil";
+}
+
+function formatDriverRoutePlace(place: DriverRoutePlace) {
+  if (place.locality && place.region) {
+    return `${place.locality}, ${place.region}`;
+  }
+
+  return place.label;
+}
+
+function dateToLocalInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToInputDate(value: string, days: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, (month ?? 1) - 1, day ?? 1);
+  date.setDate(date.getDate() + days);
+  return dateToLocalInputValue(date);
+}
+
+function formatTripDistanceKm(distanceKm?: number | null) {
+  if (!distanceKm || distanceKm <= 0) {
+    return "-- km";
+  }
+
+  return `${distanceKm.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`;
+}
+
+function formatTripDuration(seconds?: number | null) {
+  if (!seconds || seconds <= 0) {
+    return "--";
+  }
+
+  const totalMinutes = Math.max(1, Math.round(seconds / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours <= 0) {
+    return `${minutes} min`;
+  }
+
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function formatTripDate(value?: string | null) {
+  if (!value) {
+    return "--/--/----";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
+}
+
+function formatTripHistoryDistance(distanceKm?: number | null) {
+  if (!distanceKm || distanceKm <= 0) {
+    return "-- km";
+  }
+
+  return `${Math.round(distanceKm).toLocaleString("pt-BR")} km`;
+}
+
+function getTripStatusLabel(status: DriverPlannedTrip["status"]) {
+  const labels: Record<DriverPlannedTrip["status"], string> = {
+    ATIVA: "Agendada",
+    CANCELADA: "Cancelada",
+    CONCLUIDA: "Concluída",
+  };
+
+  return labels[status] ?? status;
+}
+
+function getTripStatusTone(status: DriverPlannedTrip["status"]) {
+  if (status === "CONCLUIDA") {
+    return "completed";
+  }
+
+  if (status === "CANCELADA") {
+    return "cancelled";
+  }
+
+  return "scheduled";
 }
 
 function getLoadedGoogleMaps() {
@@ -2372,6 +2540,957 @@ function formatRideTime(value: string) {
     return "Agora";
   }
   return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDriverPhone(value?: string | null) {
+  const digits = onlyDigits(value ?? "");
+
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  return value || "Não informado";
+}
+
+function getVehicleImageUrl(vehicle?: DriverProfile["vehicles"][number]) {
+  return vehicle?.front_photo_url || vehicle?.side_photo_url || vehicle?.rear_photo_url || vehicle?.interior_photo_url || "";
+}
+
+function getDriverFacePhotoUrl(profile?: DriverProfile | null) {
+  return profile?.documents?.face_photo_url || profile?.face_photo_url || "";
+}
+
+function ProfileRow({ detail, icon, label }: { detail: string; icon: string; label: string }) {
+  return (
+    <button className="profile-row" type="button">
+      <span className={`profile-row-icon ${icon}`}>
+        <Icon name={icon} />
+      </span>
+      <span>
+        <strong>{label}</strong>
+        <small>{detail}</small>
+      </span>
+      <FiChevronRight aria-hidden="true" className="profile-chevron" />
+    </button>
+  );
+}
+
+function DriverProfileScreen({
+  go,
+  onLogout,
+  token,
+}: {
+  go: (screen: Screen) => void;
+  onLogout: () => void;
+  token?: string;
+}) {
+  const [profile, setProfile] = useState<DriverProfile | null>(null);
+  const [error, setError] = useState("");
+  const vehicle = profile?.vehicles[0];
+  const vehicleImageUrl = getVehicleImageUrl(vehicle);
+  const facePhotoUrl = getDriverFacePhotoUrl(profile);
+
+  function handleRefreshProfile() {
+    if (!token) {
+      return;
+    }
+
+    void getDriverProfile(token)
+      .then(setProfile)
+      .catch((err) => setError(err instanceof Error ? err.message : "Não foi possível atualizar seus dados."));
+  }
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadProfile() {
+      try {
+        const nextProfile = await getDriverProfile(token as string);
+        if (!cancelled) {
+          setProfile(nextProfile);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Não foi possível carregar seu perfil.");
+        }
+      }
+    }
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  return (
+    <section className="scroll-screen driver-profile-screen">
+      <header className="profile-header">
+        <button aria-label="Voltar" onClick={() => go("dashboard")} type="button">
+          <FiArrowLeft aria-hidden="true" />
+        </button>
+        <h1>Perfil do motorista</h1>
+        <button aria-label="Editar perfil" type="button">
+          <FiEdit3 aria-hidden="true" />
+        </button>
+      </header>
+
+      <div className="profile-avatar-wrap">
+        <div className="profile-avatar">
+          {facePhotoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="" src={facePhotoUrl} />
+          ) : (
+            <Icon name="user" />
+          )}
+        </div>
+        <span className="profile-camera" aria-hidden="true">
+          <FiCamera />
+        </span>
+      </div>
+
+      <div className="profile-name">
+        <h2>{profile?.full_name || "Motorista SUWAVE"} <FiCheckCircle aria-hidden="true" /></h2>
+        <p>Motorista parceiro</p>
+      </div>
+
+      <button className="profile-alert" type="button">
+        <span aria-hidden="true">i</span>
+        <strong>Mantenha seus dados atualizados</strong>
+        <small>Informações atualizadas garantem mais segurança e melhor experiência.</small>
+        <FiChevronRight aria-hidden="true" className="profile-chevron" />
+      </button>
+
+      <div className="profile-section-title">
+        <span><Icon name="car" /></span>
+        <strong>Meus veículos</strong>
+        {profile?.vehicles.length ? <button type="button">Ver todos <FiChevronRight aria-hidden="true" /></button> : null}
+      </div>
+
+      {vehicle ? (
+        <button className="profile-vehicle-card" type="button">
+          <span className="profile-vehicle-image">
+            {vehicleImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img alt="" src={vehicleImageUrl} />
+            ) : (
+              <Image alt="" height={425} src="/motorista/inicio-carro-cidade.png" width={638} />
+            )}
+          </span>
+          <span>
+            <strong>{[vehicle.model, vehicle.year].filter(Boolean).join(" ") || `${vehicle.brand} ${vehicle.model}`}</strong>
+            <small>{vehicle.color || vehicle.brand}</small>
+            <em>{vehicle.plate || "Placa pendente"} 🇧🇷</em>
+          </span>
+          <FiChevronRight aria-hidden="true" className="profile-chevron vehicle" />
+        </button>
+      ) : (
+        <button className="profile-add-vehicle-card" onClick={() => go("vehicle-brand")} type="button">
+          <span className="profile-add-vehicle-image">
+            <Image alt="" height={425} src="/motorista/inicio-carro-cidade.png" width={638} />
+          </span>
+          <span>
+            <strong>Adicionar veículo</strong>
+            <small>Cadastre seu veículo para receber corridas.</small>
+          </span>
+          <FiChevronRight aria-hidden="true" className="profile-chevron vehicle" />
+        </button>
+      )}
+
+      <div className="profile-list">
+        <ProfileRow detail={profile?.full_name || "Não informado"} icon="user" label="Nome completo" />
+        <ProfileRow detail={formatDriverPhone(profile?.phone)} icon="phone" label="Telefone" />
+        <ProfileRow detail={profile?.pix_account || "Não informado"} icon="pix" label="Chave PIX" />
+        <ProfileRow detail="Gerencie seus avisos e notificações" icon="help" label="Avisos" />
+        <ProfileRow detail="Login, senha e verificação" icon="shield" label="Segurança" />
+        <ProfileRow detail="Preferências do app" icon="settings" label="Configurações" />
+      </div>
+
+      <FormToast message={error} />
+      <button className="profile-primary-action" onClick={handleRefreshProfile} type="button">
+        <FiRefreshCw aria-hidden="true" />
+        Atualizar dados
+      </button>
+      <button className="profile-logout-action" onClick={onLogout} type="button">
+        <FiLogOut aria-hidden="true" />
+        Sair da conta
+      </button>
+    </section>
+  );
+}
+
+function getRegisterTripRoutePoints(
+  origin: DriverMapLocation | null,
+  destination: DriverRoutePlace | null,
+  geometry: DriverRouteCoordinate[],
+) {
+  if (!origin || !destination) {
+    return [];
+  }
+
+  if (geometry.length >= 2) {
+    return geometry;
+  }
+
+  return [
+    { lat: origin.latitude, lng: origin.longitude },
+    { lat: destination.lat, lng: destination.lng },
+  ];
+}
+
+function getRegisterTripSvgPoints(points: DriverRouteCoordinate[]) {
+  if (points.length < 2) {
+    return "";
+  }
+
+  const latitudes = points.map((point) => point.lat);
+  const longitudes = points.map((point) => point.lng);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+  const latSpan = maxLat - minLat || 1;
+  const lngSpan = maxLng - minLng || 1;
+  const padding = 10;
+  const size = 100 - padding * 2;
+
+  return points
+    .map((point) => {
+      const x = padding + ((point.lng - minLng) / lngSpan) * size;
+      const y = padding + ((maxLat - point.lat) / latSpan) * size;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function GoogleRegisterTripMap({
+  destination,
+  onFallback,
+  origin,
+  routePoints,
+}: {
+  destination: DriverRoutePlace;
+  onFallback: () => void;
+  origin: DriverMapLocation;
+  routePoints: DriverRouteCoordinate[];
+}) {
+  const mapElementRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<GoogleMap | null>(null);
+  const markersRef = useRef<GoogleMarker[]>([]);
+  const polylineRef = useRef<GooglePolyline | null>(null);
+
+  const fitRoute = useCallback((maps: GoogleMapsNamespace, map: GoogleMap) => {
+    const bounds = new maps.LatLngBounds();
+    routePoints.forEach((point) => bounds.extend({ lat: point.lat, lng: point.lng }));
+    map.fitBounds(bounds, 34);
+  }, [routePoints]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initializeMap() {
+      try {
+        const maps = await loadGoogleMaps();
+        const element = mapElementRef.current;
+
+        if (cancelled || !element || mapRef.current) {
+          return;
+        }
+
+        const map = new maps.Map(element, {
+          center: { lat: origin.latitude, lng: origin.longitude },
+          clickableIcons: false,
+          disableDefaultUI: true,
+          fullscreenControl: false,
+          gestureHandling: "greedy",
+          mapTypeControl: false,
+          mapTypeId: "roadmap",
+          scaleControl: false,
+          streetViewControl: false,
+          zoom: 8,
+          zoomControl: false,
+        });
+
+        mapRef.current = map;
+        polylineRef.current = new maps.Polyline({
+          geodesic: true,
+          map,
+          path: routePoints,
+          strokeColor: "#073449",
+          strokeOpacity: 1,
+          strokeWeight: 6,
+        });
+        markersRef.current = [
+          new maps.Marker({
+            map,
+            position: { lat: origin.latitude, lng: origin.longitude },
+            title: "Origem",
+          }),
+          new maps.Marker({
+            map,
+            position: { lat: destination.lat, lng: destination.lng },
+            title: "Destino",
+          }),
+        ];
+        fitRoute(maps, map);
+      } catch {
+        if (!cancelled) {
+          onFallback();
+        }
+      }
+    }
+
+    initializeMap();
+
+    return () => {
+      cancelled = true;
+      markersRef.current.forEach((marker) => marker.setMap(null));
+      polylineRef.current?.setMap(null);
+      markersRef.current = [];
+      polylineRef.current = null;
+      mapRef.current = null;
+    };
+  }, [destination.lat, destination.lng, fitRoute, onFallback, origin.latitude, origin.longitude, routePoints]);
+
+  useEffect(() => {
+    if (!mapRef.current) {
+      return;
+    }
+
+    polylineRef.current?.setPath(routePoints);
+  }, [routePoints]);
+
+  return <div className="register-trip-google-map" ref={mapElementRef} />;
+}
+
+function RegisterTripMap({
+  destination,
+  geometry,
+  isRouting,
+  origin,
+}: {
+  destination: DriverRoutePlace | null;
+  geometry: DriverRouteCoordinate[];
+  isRouting: boolean;
+  origin: DriverMapLocation | null;
+}) {
+  const [shouldUseGoogleMaps, setShouldUseGoogleMaps] = useState(Boolean(googleMapsApiKey));
+  const routePoints = useMemo(
+    () => getRegisterTripRoutePoints(origin, destination, geometry),
+    [destination, geometry, origin],
+  );
+  const svgPoints = useMemo(() => getRegisterTripSvgPoints(routePoints), [routePoints]);
+
+  return (
+    <div className="register-trip-map-placeholder" aria-label="Mapa da viagem">
+      {shouldUseGoogleMaps && origin && destination && routePoints.length >= 2 ? (
+        <GoogleRegisterTripMap
+          destination={destination}
+          onFallback={() => setShouldUseGoogleMaps(false)}
+          origin={origin}
+          routePoints={routePoints}
+        />
+      ) : origin ? (
+        <>
+          <OpenStreetMapLayer location={origin} zoom={12} />
+          {svgPoints ? (
+            <svg className="register-trip-route-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <polyline points={svgPoints} />
+            </svg>
+          ) : (
+            <span className="register-trip-map-route" />
+          )}
+          <span className="register-trip-map-pin origin">
+            <Icon name="car" />
+          </span>
+          {destination ? (
+            <span className="register-trip-map-pin destination">
+              <Icon name="locate" />
+            </span>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <span className="register-trip-map-route" />
+          <span className="register-trip-map-pin origin">
+            <Icon name="car" />
+          </span>
+          <span className="register-trip-map-pin destination">
+            <Icon name="locate" />
+          </span>
+        </>
+      )}
+      {isRouting ? <span className="register-trip-map-loading">Calculando rota...</span> : null}
+    </div>
+  );
+}
+
+function RegisterTrip({ go, token }: { go: (screen: Screen) => void; token?: string }) {
+  const todayInputValue = useMemo(() => dateToLocalInputValue(new Date()), []);
+  const [originLocation, setOriginLocation] = useState<DriverMapLocation | null>(null);
+  const [originPlace, setOriginPlace] = useState<DriverMapPlace | null>(null);
+  const [destinationQuery, setDestinationQuery] = useState("");
+  const [destinationSuggestions, setDestinationSuggestions] = useState<DriverRoutePlace[]>([]);
+  const [selectedDestination, setSelectedDestination] = useState<DriverRoutePlace | null>(null);
+  const [departureDate, setDepartureDate] = useState(todayInputValue);
+  const [returnDate, setReturnDate] = useState(addDaysToInputDate(todayInputValue, 1));
+  const [routeSummary, setRouteSummary] = useState<DriverRouteSummary | null>(null);
+  const [routeGeometry, setRouteGeometry] = useState<DriverRouteCoordinate[]>([]);
+  const [isLocating, setIsLocating] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isRouting, setIsRouting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const originLabel = originPlace ? formatDriverMapPlace(originPlace) : originLocation ? "Localização atual" : "Buscando sua localização...";
+  const originDetail = originPlace?.label && originPlace.label !== originLabel ? originPlace.label : "Origem obtida pelo GPS";
+  const dateError = departureDate < todayInputValue
+    ? "A data de ida não pode ser menor que hoje."
+    : returnDate < departureDate
+      ? "A data de retorno não pode ser menor que a data de ida."
+      : "";
+  const outboundDistanceKm = routeSummary?.distanceKm ?? null;
+  const returnDistanceKm = routeSummary?.distanceKm ?? null;
+  const totalDistanceKm = routeSummary ? routeSummary.distanceKm * 2 : null;
+  const totalDurationSeconds = routeSummary ? routeSummary.durationSeconds * 2 : null;
+  const summaryCards = [
+    ["Distância total", formatTripDistanceKm(totalDistanceKm), "Ida e volta"],
+    ["Distância de ida", formatTripDistanceKm(outboundDistanceKm), ""],
+    ["Distância de retorno", formatTripDistanceKm(returnDistanceKm), ""],
+    ["Duração estimada", formatTripDuration(totalDurationSeconds), "Ida e volta"],
+  ];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOrigin() {
+      setIsLocating(true);
+      setError("");
+
+      try {
+        const position = await getCurrentPosition();
+        const location = positionToDriverMapLocation(position);
+
+        if (!cancelled) {
+          setOriginLocation(location);
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Permita a localização para registrar sua viagem.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLocating(false);
+        }
+      }
+    }
+
+    loadOrigin();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!originLocation) {
+      return;
+    }
+
+    const activeOriginLocation = originLocation;
+    let cancelled = false;
+
+    async function loadOriginPlace() {
+      try {
+        const place = await fetchDriverMapPlace(activeOriginLocation);
+        if (!cancelled) {
+          setOriginPlace(place);
+        }
+      } catch {
+        if (!cancelled) {
+          setOriginPlace(null);
+        }
+      }
+    }
+
+    loadOriginPlace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [originLocation]);
+
+  useEffect(() => {
+    const query = destinationQuery.trim();
+
+    if (selectedDestination && destinationQuery === selectedDestination.label) {
+      return;
+    }
+
+    if (query.length < 3) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const places = await searchDriverRoutePlaces(query);
+        if (!cancelled) {
+          setDestinationSuggestions(places);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDestinationSuggestions([]);
+          setError(err instanceof Error ? err.message : "Não foi possível buscar destinos agora.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSearching(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [destinationQuery, selectedDestination]);
+
+  useEffect(() => {
+    if (!originLocation || !selectedDestination) {
+      return;
+    }
+
+    const activeOriginLocation = originLocation;
+    const activeDestination = selectedDestination;
+    let cancelled = false;
+
+    async function loadRoute() {
+      setIsRouting(true);
+      setError("");
+
+      try {
+        const summary = await fetchDriverRoute(
+          { lat: activeOriginLocation.latitude, lng: activeOriginLocation.longitude },
+          { lat: activeDestination.lat, lng: activeDestination.lng },
+        );
+
+        if (!cancelled) {
+          setRouteSummary(summary);
+          setRouteGeometry(summary.geometry);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRouteSummary(null);
+          setRouteGeometry([]);
+          setError(err instanceof Error ? err.message : "Não foi possível calcular a rota agora.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRouting(false);
+        }
+      }
+    }
+
+    loadRoute();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [originLocation, selectedDestination]);
+
+  function handleSelectDestination(place: DriverRoutePlace) {
+    setSelectedDestination(place);
+    setDestinationQuery(place.label);
+    setDestinationSuggestions([]);
+    setRouteSummary(null);
+    setRouteGeometry([]);
+    setError("");
+    setSuccessMessage("");
+  }
+
+  function handleDepartureDateChange(value: string) {
+    const nextDepartureDate = value < todayInputValue ? todayInputValue : value;
+    setDepartureDate(nextDepartureDate);
+    setReturnDate((currentReturnDate) => (
+      currentReturnDate < nextDepartureDate ? nextDepartureDate : currentReturnDate
+    ));
+  }
+
+  function handleReturnDateChange(value: string) {
+    setReturnDate(value < departureDate ? departureDate : value);
+  }
+
+  async function handleSubmitTrip() {
+    setSuccessMessage("");
+
+    if (!token) {
+      setError("Entre novamente para registrar sua viagem.");
+      return;
+    }
+
+    if (!originLocation) {
+      setError("Permita a localização para registrar sua viagem.");
+      return;
+    }
+
+    if (!selectedDestination) {
+      setError("Selecione o destino da viagem.");
+      return;
+    }
+
+    if (dateError) {
+      setError(dateError);
+      return;
+    }
+
+    if (!routeSummary || routeSummary.distanceKm <= 0) {
+      setError("Aguarde o cálculo da rota para registrar sua viagem.");
+      return;
+    }
+
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await createDriverTrip(token, {
+        departure_date: departureDate,
+        destination_label: selectedDestination.label,
+        destination_latitude: selectedDestination.lat,
+        destination_longitude: selectedDestination.lng,
+        duration_seconds: routeSummary.durationSeconds * 2,
+        origin_label: originLabel,
+        origin_latitude: originLocation.latitude,
+        origin_longitude: originLocation.longitude,
+        outbound_distance_km: routeSummary.distanceKm,
+        return_date: returnDate,
+        return_distance_km: routeSummary.distanceKm,
+        route_geometry: routeGeometry,
+        total_distance_km: routeSummary.distanceKm * 2,
+      });
+      setSuccessMessage("Viagem registrada com sucesso.");
+      window.setTimeout(() => go("dashboard"), 850);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível registrar a viagem.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="scroll-screen register-trip-screen">
+      <header className="register-trip-header">
+        <button aria-label="Voltar para o painel" onClick={() => go("dashboard")} type="button">
+          <Icon name="arrow-left" />
+        </button>
+        <h1>Registrar nova viagem</h1>
+        <button aria-label="Fechar registro de viagem" onClick={() => go("dashboard")} type="button">
+          <Icon name="close" />
+        </button>
+      </header>
+
+      <div className="register-trip-field register-trip-origin">
+        <span className="register-trip-field-icon">
+          <Icon name="locate" />
+        </span>
+        <span>
+          <small>Local atual</small>
+          <strong>{isLocating ? "Buscando sua localização..." : originLabel}</strong>
+          <em>{originDetail}</em>
+        </span>
+      </div>
+
+      <div className="register-trip-search">
+        <label className="register-trip-field register-trip-destination">
+          <span className="register-trip-field-icon">
+            <Icon name="locate" />
+          </span>
+          <span>
+            <small>Destino da viagem</small>
+            <input
+              autoComplete="off"
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                setDestinationQuery(nextQuery);
+                setSelectedDestination(null);
+                setRouteSummary(null);
+                setRouteGeometry([]);
+                if (nextQuery.trim().length < 3) {
+                  setDestinationSuggestions([]);
+                  setIsSearching(false);
+                } else {
+                  setIsSearching(true);
+                }
+              }}
+              placeholder="Digite o destino da viagem"
+              type="search"
+              value={destinationQuery}
+            />
+          </span>
+        </label>
+        {isSearching ? <p className="register-trip-search-status">Buscando destinos...</p> : null}
+        {destinationSuggestions.length > 0 ? (
+          <div className="register-trip-suggestions">
+            {destinationSuggestions.map((place) => (
+              <button key={place.id} onClick={() => handleSelectDestination(place)} type="button">
+                <Icon name="locate" />
+                <span>
+                  <strong>{formatDriverRoutePlace(place)}</strong>
+                  <small>{place.label}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="register-trip-date-grid" aria-label="Datas da viagem">
+        <label className="register-trip-date-card">
+          <Icon name="calendar" />
+          <span>
+            <small>Data de ida</small>
+            <input
+              min={todayInputValue}
+              onChange={(event) => handleDepartureDateChange(event.target.value)}
+              type="date"
+              value={departureDate}
+            />
+          </span>
+        </label>
+        <label className="register-trip-date-card">
+          <Icon name="calendar" />
+          <span>
+            <small>Data de retorno</small>
+            <input
+              min={departureDate}
+              onChange={(event) => handleReturnDateChange(event.target.value)}
+              type="date"
+              value={returnDate}
+            />
+          </span>
+        </label>
+      </div>
+
+      <RegisterTripMap
+        destination={selectedDestination}
+        geometry={routeGeometry}
+        isRouting={isRouting}
+        origin={originLocation}
+      />
+
+      <h2 className="register-trip-section-title">Resumo da viagem</h2>
+      <div className="register-trip-summary-grid">
+        {summaryCards.map(([label, value, hint]) => (
+          <article className="register-trip-summary-card" key={label}>
+            <Icon name={label.includes("Duração") ? "calendar" : "locate"} />
+            <span>
+              <small>{label}</small>
+              <strong>{isRouting ? "..." : value}</strong>
+              {hint ? <em>{hint}</em> : null}
+            </span>
+          </article>
+        ))}
+      </div>
+
+      <p className="register-trip-info">
+        <Icon name="help" />
+        {error || dateError || successMessage || (isRouting ? "Calculando rota da viagem..." : selectedDestination ? "Confira os dados e confirme para registrar sua viagem." : "Informe o destino para calcular a rota da viagem.")}
+      </p>
+
+      <button
+        className="register-trip-submit"
+        disabled={isSubmitting || isRouting}
+        onClick={handleSubmitTrip}
+        type="button"
+      >
+        <Icon name="car" />
+        {isSubmitting ? "Registrando..." : "Registrar viagem"}
+      </button>
+    </section>
+  );
+}
+
+function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: string }) {
+  const [trips, setTrips] = useState<DriverPlannedTrip[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedTrip, setSelectedTrip] = useState<DriverPlannedTrip | null>(null);
+  const authError = token ? "" : "Entre novamente para ver seu histórico de viagens.";
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    const activeToken = token;
+    let cancelled = false;
+
+    async function loadTrips() {
+      setIsLoading(true);
+      setError("");
+
+      try {
+        const data = await listDriverTrips(activeToken);
+        if (!cancelled) {
+          setTrips(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTrips([]);
+          setError(err instanceof Error ? err.message : "Não foi possível carregar seu histórico de viagens agora.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadTrips();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const sortedTrips = useMemo(
+    () =>
+      [...trips].sort((left, right) => {
+        const dateCompare = left.departure_date.localeCompare(right.departure_date);
+        return dateCompare || left.destination_label.localeCompare(right.destination_label, "pt-BR");
+      }),
+    [trips],
+  );
+
+  return (
+    <section className="scroll-screen trip-history-screen">
+      <header className="trip-history-header">
+        <button aria-label="Voltar para o painel" onClick={() => go("dashboard")} type="button">
+          <Icon name="arrow-left" />
+        </button>
+        <h1>Histórico de viagens</h1>
+        <button aria-label="Registrar nova viagem" onClick={() => go("register-trip")} type="button">
+          <span aria-hidden="true">+</span>
+        </button>
+      </header>
+
+      <div className="trip-history-tabs" aria-label="Filtros do histórico">
+        <button className="active" type="button">
+          Todas
+        </button>
+        <button aria-disabled="true" className="inactive" type="button">
+          <Icon name="check" />
+          Concluídas
+        </button>
+        <button aria-disabled="true" className="inactive" type="button">
+          <Icon name="calendar" />
+          Agendadas
+        </button>
+      </div>
+
+      <section className="trip-history-section" aria-label="Todas as viagens">
+        <h2>
+          <Icon name="calendar" />
+          Todas as viagens
+        </h2>
+
+        {isLoading ? <p className="trip-history-state">Carregando viagens...</p> : null}
+        {!isLoading && (error || authError) ? <p className="trip-history-state error">{error || authError}</p> : null}
+        {!isLoading && !error && !authError && sortedTrips.length === 0 ? (
+          <p className="trip-history-state">Nenhuma viagem registrada ainda.</p>
+        ) : null}
+
+        {!isLoading && !error && !authError && sortedTrips.length > 0 ? (
+          <div className="trip-history-list">
+            {sortedTrips.map((trip) => (
+              <TripHistoryCard key={trip.id} onSelect={setSelectedTrip} trip={trip} />
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <p className="trip-history-tip">
+        <Icon name="help" />
+        <span><strong>Dica:</strong> Toque em uma viagem para ver os detalhes completos.</span>
+      </p>
+
+      {selectedTrip ? (
+        <div className="trip-detail-overlay" role="presentation" onClick={() => setSelectedTrip(null)}>
+          <aside
+            aria-label="Detalhes da viagem"
+            className="trip-detail-sheet"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button aria-label="Fechar detalhes" className="trip-detail-close" onClick={() => setSelectedTrip(null)} type="button">
+              <Icon name="close" />
+            </button>
+            <h2>{selectedTrip.destination_label}</h2>
+            <div className="trip-detail-grid">
+              <TripDetailItem label="Origem" value={selectedTrip.origin_label || "Local atual"} />
+              <TripDetailItem label="Destino" value={selectedTrip.destination_label} />
+              <TripDetailItem label="Ida" value={formatTripDate(selectedTrip.departure_date)} />
+              <TripDetailItem label="Retorno" value={formatTripDate(selectedTrip.return_date)} />
+              <TripDetailItem label="Distância total" value={formatTripHistoryDistance(selectedTrip.total_distance_km)} />
+              <TripDetailItem label="Distância de ida" value={formatTripHistoryDistance(selectedTrip.outbound_distance_km)} />
+              <TripDetailItem label="Distância de retorno" value={formatTripHistoryDistance(selectedTrip.return_distance_km)} />
+              <TripDetailItem label="Duração estimada" value={formatTripDuration(selectedTrip.duration_seconds)} />
+              <TripDetailItem label="Status" value={getTripStatusLabel(selectedTrip.status)} />
+            </div>
+          </aside>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function TripHistoryCard({
+  onSelect,
+  trip,
+}: {
+  onSelect: (trip: DriverPlannedTrip) => void;
+  trip: DriverPlannedTrip;
+}) {
+  const tone = getTripStatusTone(trip.status);
+
+  return (
+    <button className="trip-history-card" onClick={() => onSelect(trip)} type="button">
+      <span className={`trip-history-icon ${tone}`}>
+        <Icon name={tone === "completed" ? "check" : "calendar"} />
+      </span>
+      <span className="trip-history-main">
+        <strong>{trip.destination_label}</strong>
+        <small>Ida: {formatTripDate(trip.departure_date)}</small>
+        <small>Retorno: {formatTripDate(trip.return_date)}</small>
+      </span>
+      <span className="trip-history-metrics">
+        <em className={`trip-history-badge ${tone}`}>{getTripStatusLabel(trip.status)}</em>
+        <span>
+          <Icon name="road" />
+          <b>{formatTripHistoryDistance(trip.total_distance_km)}</b>
+          <small>ida e volta</small>
+        </span>
+      </span>
+      <FiChevronRight aria-hidden="true" className="trip-history-chevron" />
+    </button>
+  );
+}
+
+function TripDetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <span>
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </span>
+  );
 }
 
 function Dashboard({
@@ -2771,7 +3890,13 @@ function Dashboard({
                 width={638}
               />
             </div>
-            <button type="button">
+            <button
+              onClick={() => {
+                setIsDriverMenuOpen(false);
+                go("profile");
+              }}
+              type="button"
+            >
               <Icon name="user" />
               <span>Perfil</span>
             </button>
@@ -2779,11 +3904,23 @@ function Dashboard({
               <Icon name="settings" />
               <span>Configurações</span>
             </button>
-            <button type="button">
+            <button
+              onClick={() => {
+                setIsDriverMenuOpen(false);
+                go("register-trip");
+              }}
+              type="button"
+            >
               <Icon name="locate" />
               <span>Registrar uma rota</span>
             </button>
-            <button type="button">
+            <button
+              onClick={() => {
+                setIsDriverMenuOpen(false);
+                go("trip-history");
+              }}
+              type="button"
+            >
               <Icon name="calendar" />
               <span>Histórico de viagens</span>
             </button>
@@ -3337,6 +4474,12 @@ export default function Home() {
         return <Status go={go} token={driverToken} />;
       case "dashboard":
         return <Dashboard go={go} onLogout={handleLogout} token={driverToken} />;
+      case "profile":
+        return <DriverProfileScreen go={go} onLogout={handleLogout} token={driverToken} />;
+      case "register-trip":
+        return <RegisterTrip go={go} token={driverToken} />;
+      case "trip-history":
+        return <TripHistory go={go} token={driverToken} />;
       case "vehicle-brand":
         return <VehicleBrand go={go} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} />;
       case "vehicle-data":
