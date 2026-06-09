@@ -1122,8 +1122,8 @@ h2 {
 
 .action.secondary {
   background: #fff;
-  border: 1.8px solid var(--suwave-black);
-  box-shadow: none;
+  border: 1px solid #c8d4db;
+  box-shadow: 0 10px 22px rgb(12 42 58 / 0.08);
   color: var(--suwave-black);
 }
 
@@ -2098,18 +2098,20 @@ h2 {
 
 .map-controls button {
   align-items: center;
-  background: #fff;
-  border: 1.5px solid rgb(8 8 8 / 0.86);
+  background: rgb(255 255 255 / 0.96);
+  border: 1px solid rgb(152 170 180 / 0.42);
   border-radius: 50%;
-  box-shadow: 0 10px 22px rgb(12 42 58 / 0.12);
-  color: var(--suwave-black);
+  box-shadow: 0 12px 28px rgb(12 42 58 / 0.14);
+  color: #173447;
   display: grid;
-  font-size: 28px;
-  font-weight: 900;
   height: 46px;
   justify-content: center;
   line-height: 1;
   padding: 0;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
   width: 46px;
 }
 
@@ -2118,9 +2120,20 @@ h2 {
   opacity: 0.54;
 }
 
+.map-controls button:not(:disabled):hover {
+  background: #fffaf0;
+  box-shadow: 0 14px 30px rgb(12 42 58 / 0.18);
+  transform: translateY(-1px);
+}
+
+.map-controls button:not(:disabled):active {
+  transform: scale(0.96);
+}
+
 .map-controls svg {
-  height: 22px;
-  width: 22px;
+  height: 20px;
+  stroke-width: 2.4;
+  width: 20px;
 }
 
 .map-controls .is-loading svg {
@@ -2260,10 +2273,11 @@ h2 {
 
 .driver-menu-button {
   align-items: center;
-  background: #fff;
-  border: 1.5px solid var(--suwave-black);
+  background: rgb(255 255 255 / 0.96);
+  border: 1px solid rgb(152 170 180 / 0.42);
   border-radius: 50%;
-  color: var(--suwave-black);
+  box-shadow: 0 12px 28px rgb(12 42 58 / 0.14);
+  color: #173447;
   display: grid;
   height: 48px;
   justify-items: center;
@@ -2280,14 +2294,15 @@ h2 {
 }
 
 .driver-menu-button svg {
-  height: 22px;
+  height: 20px;
+  stroke-width: 2.4;
   transition: transform 0.18s ease;
-  width: 22px;
+  width: 20px;
 }
 
 .driver-menu-button:hover {
-  background: #fff8da;
-  box-shadow: 0 10px 24px rgb(8 26 54 / 0.14);
+  background: #fffaf0;
+  box-shadow: 0 14px 30px rgb(8 26 54 / 0.18);
   transform: translateY(-1px);
 }
 

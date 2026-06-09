@@ -330,9 +330,22 @@ function Icon({ name }: { name: string }) {
     case "menu":
       return (
         <svg {...common}>
-          <path d="M4 7h16" />
-          <path d="M4 12h16" />
-          <path d="M4 17h16" />
+          <path d="M5 8.5h14" />
+          <path d="M5 12h14" />
+          <path d="M5 15.5h14" />
+        </svg>
+      );
+    case "plus":
+      return (
+        <svg {...common}>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </svg>
+      );
+    case "minus":
+      return (
+        <svg {...common}>
+          <path d="M5 12h14" />
         </svg>
       );
     case "settings":
@@ -3750,7 +3763,7 @@ function Dashboard({
           onClick={() => setMapZoom((zoom) => Math.min(zoom + 1, maxDriverMapZoom))}
           type="button"
         >
-          +
+          <Icon name="plus" />
         </button>
         <button
           aria-label="Afastar mapa"
@@ -3758,7 +3771,7 @@ function Dashboard({
           onClick={() => setMapZoom((zoom) => Math.max(zoom - 1, minDriverMapZoom))}
           type="button"
         >
-          -
+          <Icon name="minus" />
         </button>
         <button
           aria-label="Usar minha localização atual"
