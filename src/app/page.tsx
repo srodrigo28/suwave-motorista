@@ -25,7 +25,9 @@ import {
   setDriverOffline,
   setDriverOnline,
   submitDriverReview,
+  updateDriverVehicle,
   uploadDriverImage,
+  DRIVER_AUTH_EXPIRED_EVENT,
   type DriverPlannedTrip,
   type DriverProfile,
   type DriverRideRequest,
@@ -33,6 +35,7 @@ import {
 } from "@/services/driver-client";
 import {
   useDriverFlowStore,
+  type DriverWorkMode,
   type DriverSignupForm,
   type VehicleBrandOption,
   type VehicleForm,
@@ -53,6 +56,8 @@ type Screen =
   | "profile"
   | "register-trip"
   | "trip-history"
+  | "vehicle-list"
+  | "vehicle-mode"
   | "vehicle-brand"
   | "vehicle-data"
   | "vehicle-photos"
@@ -462,6 +467,36 @@ function Icon({ name }: { name: string }) {
           <path d="M6 16h12M7 16l1.4-5.2A2.5 2.5 0 0 1 10.8 9h2.4a2.5 2.5 0 0 1 2.4 1.8L17 16" />
           <circle cx="8" cy="17" r="1.5" />
           <circle cx="16" cy="17" r="1.5" />
+        </svg>
+      );
+    case "van":
+      return (
+        <svg {...common}>
+          <path d="M3 16h15" />
+          <path d="M4 16V9a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v7" />
+          <path d="M14 10h3l3 3v3h-6" />
+          <circle cx="8" cy="17" r="1.5" />
+          <circle cx="17" cy="17" r="1.5" />
+        </svg>
+      );
+    case "moto":
+      return (
+        <svg {...common}>
+          <circle cx="7" cy="17" r="2" />
+          <circle cx="18" cy="17" r="2" />
+          <path d="M9 17h4l2.2-4H12l-2-3H7" />
+          <path d="M14 10h3l2 2" />
+          <path d="M10.5 9.5 12 12" />
+        </svg>
+      );
+    case "bike":
+      return (
+        <svg {...common}>
+          <circle cx="6.5" cy="17" r="2.5" />
+          <circle cx="17.5" cy="17" r="2.5" />
+          <path d="M8 17 11 10h2l3 7" />
+          <path d="M10.5 10H7.5" />
+          <path d="M12 10 14.5 8.5" />
         </svg>
       );
     case "road":
@@ -940,9 +975,13 @@ function driverAvailabilityMessage(conflicts: Partial<Record<"email" | "cpf" | "
 }
 
 function Login({
+  initialError,
+  onClearInitialError,
   go,
   onAuthenticated,
 }: {
+  initialError?: string;
+  onClearInitialError?: () => void;
   go: (screen: Screen) => void;
   onAuthenticated: (token: string) => void;
 }) {
@@ -950,8 +989,10 @@ function Login({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const visibleError = error || initialError;
 
   async function handleLogin() {
+    onClearInitialError?.();
     setIsSubmitting(true);
     setError("");
     try {
@@ -995,7 +1036,7 @@ function Login({
       <button className="link-button" onClick={() => go("forgot-password")} type="button">
         Esqueci minha senha
       </button>
-      <FormToast message={error} />
+      <FormToast message={visibleError} />
       <ActionButton onClick={handleLogin}>{isSubmitting ? "Entrando..." : "Entrar"}</ActionButton>
       <ActionButton onClick={() => go("signup")} secondary>
         Cadastrar como motorista
@@ -2577,6 +2618,31 @@ function getDriverFacePhotoUrl(profile?: DriverProfile | null) {
   return profile?.documents?.face_photo_url || profile?.face_photo_url || "";
 }
 
+function getVehicleStatusLabel(status?: string | null) {
+  if (!status) {
+    return "Em análise";
+  }
+
+  switch (status.toUpperCase()) {
+    case "APROVADO":
+      return "Ativo";
+    case "REJEITADO":
+      return "Reprovado";
+    case "PENDENTE":
+      return "Em análise";
+    default:
+      return status;
+  }
+}
+
+function formatVehicleYear(value?: string | number | null) {
+  if (value == null || value === "") {
+    return "Não informado";
+  }
+
+  return String(value);
+}
+
 function ProfileRow({ detail, icon, label }: { detail: string; icon: string; label: string }) {
   return (
     <button className="profile-row" type="button">
@@ -2706,7 +2772,7 @@ function DriverProfileScreen({
           <FiChevronRight aria-hidden="true" className="profile-chevron vehicle" />
         </button>
       ) : (
-        <button className="profile-add-vehicle-card" onClick={() => go("vehicle-brand")} type="button">
+        <button className="profile-add-vehicle-card" onClick={() => go("vehicle-mode")} type="button">
           <span className="profile-add-vehicle-image">
             <Image alt="" height={425} src="/motorista/inicio-carro-cidade.png" width={638} />
           </span>
@@ -2736,6 +2802,126 @@ function DriverProfileScreen({
         <FiLogOut aria-hidden="true" />
         Sair da conta
       </button>
+    </section>
+  );
+}
+
+function VehicleListScreen({
+  go,
+  token,
+}: {
+  go: (screen: Screen) => void;
+  token?: string;
+}) {
+  const [profile, setProfile] = useState<DriverProfile | null>(null);
+  const [error, setError] = useState("");
+  const setEditingVehicleId = useDriverFlowStore((state) => state.setEditingVehicleId);
+  const setSelectedBrand = useDriverFlowStore((state) => state.setSelectedBrand);
+  const setVehicleForm = useDriverFlowStore((state) => state.setVehicleForm);
+  const setVehicleUploads = useDriverFlowStore((state) => state.setVehicleUploads);
+
+  function handleEditVehicle(vehicle: DriverProfile["vehicles"][number]) {
+    setEditingVehicleId(vehicle.id);
+    setSelectedBrand({ codigo: normalizeBrandName(vehicle.brand), nome: vehicle.brand });
+    setVehicleForm({
+      model: vehicle.model,
+      plate: vehicle.plate,
+      year: vehicle.year == null ? "" : String(vehicle.year),
+    });
+    setVehicleUploads({
+      front: vehicle.front_photo_url ? { url: vehicle.front_photo_url } : undefined,
+      interior: vehicle.interior_photo_url ? { url: vehicle.interior_photo_url } : undefined,
+      rear: vehicle.rear_photo_url ? { url: vehicle.rear_photo_url } : undefined,
+      side: vehicle.side_photo_url ? { url: vehicle.side_photo_url } : undefined,
+    });
+    go("vehicle-photos");
+  }
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    const activeToken = token;
+    let cancelled = false;
+
+    async function loadProfile() {
+      try {
+        const nextProfile = await getDriverProfile(activeToken);
+        if (!cancelled) {
+          setProfile(nextProfile);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Não foi possível carregar seus veículos.");
+        }
+      }
+    }
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  return (
+    <section className="scroll-screen vehicle-list-screen">
+      <AppHeader onBack={() => go("dashboard")} />
+      <div className="vehicle-list-title-row">
+        <div>
+          <h1>Meus veículos</h1>
+          <p>Gerencie os veículos cadastrados.</p>
+        </div>
+        <button aria-label="Adicionar veículo" className="vehicle-list-add-button" onClick={() => go("vehicle-mode")} type="button">
+          +
+        </button>
+      </div>
+
+      <div className="vehicle-list-stack">
+        {profile?.vehicles.length ? (
+          profile.vehicles.map((vehicle) => {
+            const vehicleImageUrl = getVehicleImageUrl(vehicle);
+
+            return (
+              <button className="vehicle-list-card" key={vehicle.id} onClick={() => handleEditVehicle(vehicle)} type="button">
+                <span className="vehicle-list-card-image">
+                  {vehicleImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img alt="" src={vehicleImageUrl} />
+                  ) : (
+                    <Image alt="" height={425} src="/motorista/inicio-carro-cidade.png" width={638} />
+                  )}
+                </span>
+                <div className="vehicle-list-card-copy">
+                  <div className="vehicle-list-card-topline">
+                    <strong>{[vehicle.brand, vehicle.model].filter(Boolean).join(" ")}</strong>
+                    <span className={vehicle.status?.toUpperCase() === "APROVADO" ? "is-active" : ""}>
+                      {getVehicleStatusLabel(vehicle.status)}
+                    </span>
+                  </div>
+                  <small>Placa: {vehicle.plate || "Não informada"}</small>
+                  <small>Ano: {formatVehicleYear(vehicle.year)}</small>
+                  <small>Cor: {vehicle.color || "Não informada"}</small>
+                </div>
+              </button>
+            );
+          })
+        ) : (
+          <button className="profile-add-vehicle-card" onClick={() => go("vehicle-mode")} type="button">
+            <span className="profile-add-vehicle-image">
+              <Image alt="" height={425} src="/motorista/inicio-carro-cidade.png" width={638} />
+            </span>
+            <span>
+              <strong>Adicionar veículo</strong>
+              <small>Cadastre seu veículo para receber corridas.</small>
+            </span>
+            <FiChevronRight aria-hidden="true" className="profile-chevron vehicle" />
+          </button>
+        )}
+      </div>
+
+      <FormToast message={error} />
     </section>
   );
 }
@@ -3874,7 +4060,7 @@ function Dashboard({
           {isSubmitting ? "Atualizando..." : isOnline ? "Ficar offline" : "Online"}
         </ActionButton>
         {shouldShowAddVehicle ? (
-          <ActionButton onClick={() => go("vehicle-brand")} secondary>
+          <ActionButton onClick={() => go("vehicle-mode")} secondary>
             Adicionar veículo
           </ActionButton>
         ) : null}
@@ -3940,7 +4126,7 @@ function Dashboard({
             <button
               onClick={() => {
                 setIsDriverMenuOpen(false);
-                go("vehicle-brand");
+                go("vehicle-list");
               }}
               type="button"
             >
@@ -4025,7 +4211,7 @@ function VehicleBrand({
 
   return (
     <section className="scroll-screen">
-      <AppHeader onBack={() => go("dashboard")} />
+      <AppHeader onBack={() => go("vehicle-mode")} />
       <div className="title-row">
         <h1>Cadastrar veículo</h1>
       </div>
@@ -4085,7 +4271,7 @@ function VehicleBrand({
         ) : null}
       </div>
       <ActionButton onClick={() => go("vehicle-data")}>Continuar</ActionButton>
-      <button className="outline-back" onClick={() => go("dashboard")} type="button">
+      <button className="outline-back" onClick={() => go("vehicle-mode")} type="button">
         Voltar
       </button>
       <FooterNote />
@@ -4120,57 +4306,366 @@ function AppHeader({ onBack }: { onBack: () => void }) {
   );
 }
 
+function VehicleMode({
+  go,
+  selectedWorkMode,
+  setSelectedWorkMode,
+}: {
+  go: (screen: Screen) => void;
+  selectedWorkMode: DriverWorkMode | null;
+  setSelectedWorkMode: (mode: DriverWorkMode | null) => void;
+}) {
+  const setEditingVehicleId = useDriverFlowStore((state) => state.setEditingVehicleId);
+  const options: Array<{
+    description: string;
+    imageSrc: string;
+    label: string;
+    value: DriverWorkMode;
+  }> = [
+    {
+      description: "Viagem e entrega com carro",
+      imageSrc: "/motorista/workmode2-car.png",
+      label: "Viagem e entrega com carro",
+      value: "car_trip_delivery",
+    },
+    {
+      description: "Entrega com carro",
+      imageSrc: "/motorista/workmode2-van.png",
+      label: "Entrega com carro",
+      value: "car_delivery",
+    },
+    {
+      description: "Entrega com moto",
+      imageSrc: "/motorista/workmode2-moto.png",
+      label: "Entrega com moto",
+      value: "moto_delivery",
+    },
+    {
+      description: "Entrega com bicicleta",
+      imageSrc: "/motorista/workmode2-bike.png",
+      label: "Entrega com bicicleta",
+      value: "bike_delivery",
+    },
+  ];
+
+  return (
+    <section className="scroll-screen vehicle-mode-screen">
+      <button aria-label="Voltar" className="plain-icon-back" onClick={() => go("dashboard")} type="button">
+        <Icon name="arrow-left" />
+      </button>
+      <div className="vehicle-mode-copy">
+        <h1>Escolha sua forma de trabalho</h1>
+        <p>Use seu proprio veiculo ou alugue um e comece a viajar e fazer entregas.</p>
+        <strong>Necessario: CNH com EAR</strong>
+        <small>Selecione uma opcao abaixo.</small>
+      </div>
+      <div className="vehicle-mode-list">
+        {options.map((option) => (
+          <button
+            aria-pressed={selectedWorkMode === option.value}
+            className={selectedWorkMode === option.value ? "vehicle-mode-card active" : "vehicle-mode-card"}
+            key={option.value}
+            onClick={() => setSelectedWorkMode(option.value)}
+            type="button"
+          >
+            <span aria-hidden="true" className="vehicle-mode-illustration image-based">
+              <Image alt="" height={88} src={option.imageSrc} width={100} />
+            </span>
+            <strong>{option.label}</strong>
+          </button>
+        ))}
+      </div>
+      <ActionButton
+        disabled={!selectedWorkMode}
+        onClick={() => {
+          setEditingVehicleId(undefined);
+          go("vehicle-data");
+        }}
+      >
+        Continuar
+      </ActionButton>
+    </section>
+  );
+}
+
+function getWorkModeUi(mode: DriverWorkMode | null) {
+  switch (mode) {
+    case "moto_delivery":
+      return {
+        brandLabel: "Fabricante",
+        brandMode: "select" as const,
+        dataSubtitle: "Informe os dados da moto que você usará para realizar entregas.",
+        dataTitle: "Dados da moto",
+        emptyPreviewImageSrc: "/motorista/workmode2-moto.png",
+        entityLabel: "moto",
+        heroImageClassName: "mode-moto",
+        heroImageSrc: "/motorista/workmode2-moto.png",
+        needsPlate: true,
+        needsYear: true,
+        photoInfo: "ⓘ Envie fotos nítidas da frente, traseira, lateral e do painel ou baú da moto.",
+        photoSubtitle: "Envie fotos nítidas da moto para análise.",
+        photoTitle: "Fotos da moto",
+        reviewPhotoAlt: "Foto da moto cadastrada",
+        slots: [
+          { key: "front" as const, label: "Frente" },
+          { key: "rear" as const, label: "Traseira" },
+          { key: "side" as const, label: "Lateral" },
+          { key: "interior" as const, label: "Painel ou baú" },
+        ],
+      };
+    case "bike_delivery":
+      return {
+        brandLabel: "Marca",
+        brandMode: "input" as const,
+        dataSubtitle: "Informe os dados da bicicleta que você usará para realizar entregas.",
+        dataTitle: "Dados da bicicleta",
+        emptyPreviewImageSrc: "/motorista/workmode2-bike.png",
+        entityLabel: "bicicleta",
+        heroImageClassName: "mode-bike",
+        heroImageSrc: "/motorista/workmode2-bike.png",
+        needsPlate: false,
+        needsYear: false,
+        photoInfo: "ⓘ Envie fotos nítidas da frente, traseira e lateral da bicicleta.",
+        photoSubtitle: "Envie fotos nítidas da bicicleta para análise.",
+        photoTitle: "Fotos da bicicleta",
+        reviewPhotoAlt: "Foto da bicicleta cadastrada",
+        slots: [
+          { key: "front" as const, label: "Frente" },
+          { key: "rear" as const, label: "Traseira" },
+          { key: "side" as const, label: "Lateral" },
+        ],
+      };
+    case "car_trip_delivery":
+    case "car_delivery":
+    default:
+      return {
+        brandLabel: "Fabricante",
+        brandMode: "select" as const,
+        dataSubtitle: "Informe os dados do veículo que você usará para realizar corridas.",
+        dataTitle: "Dados do veículo",
+        emptyPreviewImageSrc: "/motorista/inicio-carro-cidade.png",
+        entityLabel: "veículo",
+        heroImageClassName: "mode-car",
+        heroImageSrc: "/motorista/inicio-carro-cidade.png",
+        needsPlate: true,
+        needsYear: true,
+        photoInfo: "ⓘ Certifique-se de que o veículo esteja bem iluminado e todos os detalhes visíveis.",
+        photoSubtitle: "Envie fotos nítidas do veículo para análise.",
+        photoTitle: "Fotos do veículo",
+        reviewPhotoAlt: "Foto frontal do veículo cadastrado",
+        slots: [
+          { key: "front" as const, label: "Frente" },
+          { key: "rear" as const, label: "Traseira" },
+          { key: "side" as const, label: "Lateral" },
+          { key: "interior" as const, label: "Interior" },
+        ],
+      };
+  }
+}
+
 function VehicleData({
   form,
   go,
+  selectedBrand,
+  selectedWorkMode,
   setForm,
+  setSelectedBrand,
 }: {
   form: VehicleForm;
   go: (screen: Screen) => void;
+  selectedBrand: VehicleBrandOption | null;
+  selectedWorkMode: DriverWorkMode | null;
   setForm: (form: VehicleForm) => void;
+  setSelectedBrand: (brand: VehicleBrandOption) => void;
 }) {
+  const [brands, setBrands] = useState<VehicleBrandOption[]>(fallbackBrands);
+  const [query, setQuery] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadBrands() {
+      try {
+        const response = await fetch("https://brasilapi.com.br/api/fipe/marcas/v1/carros");
+
+        if (!response.ok) {
+          throw new Error("Nao foi possivel carregar marcas");
+        }
+
+        const data = (await response.json()) as Array<{ nome?: string; valor?: string }>;
+        const nextBrands = data
+          .filter((brand) => brand.nome && brand.valor)
+          .map((brand) => ({ codigo: String(brand.valor), nome: String(brand.nome) }))
+          .sort((left, right) => left.nome.localeCompare(right.nome, "pt-BR"));
+
+        if (isMounted && nextBrands.length > 0) {
+          setBrands(nextBrands);
+        }
+      } catch {
+        if (isMounted) {
+          setBrands(fallbackBrands);
+        }
+      }
+    }
+
+    void loadBrands();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const visibleBrands = brands
+    .filter((brand) => brand.nome.toLocaleLowerCase("pt-BR").includes(normalizedQuery))
+    .slice(0, 30);
+  const modeUi = getWorkModeUi(selectedWorkMode);
+  const isFormValid =
+    Boolean(selectedBrand) &&
+    form.model.trim().length > 0 &&
+    (!modeUi.needsYear || form.year.trim().length === 4) &&
+    (!modeUi.needsPlate || form.plate.trim().length >= 7);
+
   return (
-    <section className="scroll-screen">
-      <AppHeader onBack={() => go("vehicle-brand")} />
-      <Progress current={2} labels={["Conta", "Veículo", "Documentos", "Confirmação"]} total={vehicleSteps} />
-      <h1>Dados do veículo</h1>
-      <p className="subtitle left">Informe os dados do veículo que você usará para realizar corridas.</p>
-      <div className="form-card">
+    <section className="scroll-screen vehicle-data-screen">
+      <div className="vehicle-form-topbar">
+        <button aria-label="Voltar" onClick={() => go("vehicle-mode")} type="button">
+          <FiArrowLeft aria-hidden="true" />
+        </button>
+      </div>
+      <h1>{modeUi.dataTitle}</h1>
+      <p className="vehicle-form-subtitle">{modeUi.dataSubtitle}</p>
+      {modeUi.heroImageSrc ? (
+        <div aria-hidden="true" className={`vehicle-data-hero ${modeUi.heroImageClassName}`}>
+          <Image
+            alt=""
+            className="vehicle-data-hero-image"
+            height={425}
+            priority
+            src={modeUi.heroImageSrc}
+            width={638}
+          />
+        </div>
+      ) : null}
+      <div className="vehicle-form-panel">
+        <label>{modeUi.brandLabel}</label>
+        {modeUi.brandMode === "input" ? (
+          <input
+            className="vehicle-form-input"
+            onChange={(event) =>
+              setSelectedBrand({
+                codigo: normalizeBrandName(event.target.value || "bike"),
+                nome: event.target.value,
+              })
+            }
+            placeholder="Ex: Caloi"
+            value={selectedBrand?.nome ?? ""}
+          />
+        ) : (
+          <div className={`select-panel vehicle-inline-select ${isOpen ? "is-open" : ""}`}>
+            <button
+              aria-expanded={isOpen}
+              className="brand-select-trigger vehicle-select-trigger"
+              onClick={() => setIsOpen((current) => !current)}
+              type="button"
+            >
+              <span>{selectedBrand?.nome ?? "Selecione o fabricante"}</span>
+              <b aria-hidden="true">⌄</b>
+            </button>
+            {isOpen ? (
+              <div className="brand-dropdown vehicle-brand-dropdown">
+                <input
+                  autoFocus
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Buscar fabricante"
+                  value={query}
+                />
+                <div className="brand-options">
+                  {visibleBrands.map((brand) => (
+                    <button
+                      className={selectedBrand?.codigo === brand.codigo ? "selected" : ""}
+                      key={brand.codigo}
+                      onClick={() => {
+                        setSelectedBrand(brand);
+                        setIsOpen(false);
+                        setQuery("");
+                      }}
+                      type="button"
+                    >
+                      <span>{brand.nome}</span>
+                      {selectedBrand?.codigo === brand.codigo ? <b>✓</b> : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
         <label>Modelo</label>
         <input
+          className="vehicle-form-input"
           onChange={(event) => setForm({ ...form, model: event.target.value })}
-          placeholder="Ex: Onix"
+          placeholder={modeUi.entityLabel === "bicicleta" ? "Ex: Aro 29 / MTB" : "Onix"}
           value={form.model}
         />
-        <label>Placa</label>
-        <input
-          onChange={(event) => setForm({ ...form, plate: event.target.value.toUpperCase() })}
-          placeholder="ABC1D23"
-          value={form.plate}
-        />
-        <small>ⓘ Use letras maiúsculas.</small>
+        {modeUi.needsYear ? (
+          <>
+            <label>Ano</label>
+            <input
+              className="vehicle-form-input"
+              inputMode="numeric"
+              maxLength={4}
+              onChange={(event) =>
+                setForm({ ...form, year: event.target.value.replace(/\D/g, "").slice(0, 4) })
+              }
+              placeholder="2022"
+              value={form.year}
+            />
+          </>
+        ) : null}
+        {modeUi.needsPlate ? (
+          <>
+            <label>Placa</label>
+            <input
+              className="vehicle-form-input"
+              maxLength={7}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  plate: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7),
+                })
+              }
+              placeholder="ABC1D23"
+              value={form.plate}
+            />
+            <small className="vehicle-form-note">ⓘ Use letras maiúsculas.</small>
+          </>
+        ) : null}
       </div>
-      <ActionButton onClick={() => go("vehicle-photos")}>Continuar</ActionButton>
-      <button className="outline-back" onClick={() => go("vehicle-brand")} type="button">
-        Voltar
-      </button>
-      <p className="security">▣ Suas informações estão protegidas e nunca serão compartilhadas.</p>
-      <FooterNote />
+      <ActionButton disabled={!isFormValid} onClick={() => go("vehicle-photos")}>Continuar</ActionButton>
+      <p className="vehicle-data-security">
+        <span aria-hidden="true">🛡</span>
+        <span>Suas informações estão protegidas e nunca serão compartilhadas.</span>
+      </p>
     </section>
   );
 }
 
 function VehiclePhotos({
   go,
+  selectedWorkMode,
   setVehicleUploads,
   token,
   vehicleUploads,
 }: {
   go: (screen: Screen) => void;
+  selectedWorkMode: DriverWorkMode | null;
   setVehicleUploads: (uploads: VehicleUploads) => void;
   token?: string;
   vehicleUploads: VehicleUploads;
 }) {
+  const editingVehicleId = useDriverFlowStore((state) => state.editingVehicleId);
   const inputRefs = {
     front: useRef<HTMLInputElement>(null),
     interior: useRef<HTMLInputElement>(null),
@@ -4178,13 +4673,25 @@ function VehiclePhotos({
     side: useRef<HTMLInputElement>(null),
   };
   const [error, setError] = useState("");
+  const [previewUrls, setPreviewUrls] = useState<Partial<Record<keyof VehicleUploads, string>>>({});
+  const previewUrlsRef = useRef<Partial<Record<keyof VehicleUploads, string>>>({});
   const [uploadingSlot, setUploadingSlot] = useState<keyof VehicleUploads | null>(null);
-  const slots: Array<{ key: keyof VehicleUploads; label: string }> = [
-    { key: "front", label: "Frente" },
-    { key: "rear", label: "Traseira" },
-    { key: "side", label: "Lateral" },
-    { key: "interior", label: "Interior" },
-  ];
+  const modeUi = getWorkModeUi(selectedWorkMode);
+  const slots = modeUi.slots;
+
+  useEffect(() => {
+    previewUrlsRef.current = previewUrls;
+  }, [previewUrls]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewUrlsRef.current).forEach((previewUrl) => {
+        if (previewUrl?.startsWith("blob:")) {
+          URL.revokeObjectURL(previewUrl);
+        }
+      });
+    };
+  }, []);
 
   async function handleVehiclePhoto(file: File | undefined, key: keyof VehicleUploads) {
     if (!file || !token) {
@@ -4192,6 +4699,14 @@ function VehiclePhotos({
       return;
     }
 
+    const nextPreviewUrl = URL.createObjectURL(file);
+    setPreviewUrls((current) => {
+      const previousUrl = current[key];
+      if (previousUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(previousUrl);
+      }
+      return { ...current, [key]: nextPreviewUrl };
+    });
     setUploadingSlot(key);
     setError("");
     try {
@@ -4204,45 +4719,94 @@ function VehiclePhotos({
     }
   }
 
+  function handleReplaceAllPhotos() {
+    Object.values(previewUrlsRef.current).forEach((previewUrl) => {
+      if (previewUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    });
+    setPreviewUrls({});
+    setVehicleUploads({});
+    setError("");
+  }
+
   return (
     <section className="scroll-screen">
-      <AppHeader onBack={() => go("vehicle-data")} />
+      <AppHeader onBack={() => go(editingVehicleId ? "vehicle-list" : "vehicle-data")} />
       <Progress current={3} total={vehicleSteps} />
       <p className="step-label">3 de 4</p>
-      <h1>Fotos do veículo</h1>
-      <p className="subtitle">Envie fotos nitidas para análise.</p>
-      <p className="info-line">ⓘ Certifique-se de que o veículo esteja bem iluminado e todos os detalhes visíveis.</p>
+      <h1>{editingVehicleId ? `Editar fotos da ${modeUi.entityLabel}` : modeUi.photoTitle}</h1>
+      <p className="subtitle">
+        {editingVehicleId
+          ? `Toque em uma foto para trocar só ela ou substitua todas de uma vez.`
+          : modeUi.photoSubtitle}
+      </p>
+      <p className="info-line">{modeUi.photoInfo}</p>
+      {editingVehicleId ? (
+        <div className="vehicle-photo-toolbar">
+          <button className="vehicle-photo-toolbar-button" onClick={handleReplaceAllPhotos} type="button">
+            Trocar todas as fotos
+          </button>
+        </div>
+      ) : null}
       <div className="photo-grid">
-        {slots.map((slot) => (
-          <div className="vehicle-photo" key={slot.key}>
-            <strong>{slot.label}</strong>
-            <button
-              className={vehicleUploads[slot.key] ? "photo-filled" : "photo-empty"}
-              onClick={() => inputRefs[slot.key].current?.click()}
-              type="button"
-            >
-              {vehicleUploads[slot.key] ? "" : <Icon name="camera" />}
-            </button>
-            <input
-              accept="image/*"
-              hidden
-              onChange={(event) => handleVehiclePhoto(event.target.files?.[0], slot.key)}
-              ref={inputRefs[slot.key]}
-              type="file"
-            />
-            <span>
-              {uploadingSlot === slot.key
-                ? "Enviando..."
-                : vehicleUploads[slot.key]
-                  ? "✓ Foto enviada"
-                  : "Adicionar foto"}
-            </span>
-          </div>
-        ))}
+        {slots.map((slot) => {
+          const previewUrl = previewUrls[slot.key] ?? vehicleUploads[slot.key]?.url;
+          const hasPhoto = Boolean(previewUrl);
+          const isUploading = uploadingSlot === slot.key;
+
+          return (
+            <div className="vehicle-photo" key={slot.key}>
+              <div className="vehicle-photo-header">
+                <strong>{slot.label}</strong>
+                {hasPhoto ? (
+                  <span aria-hidden="true" className="vehicle-photo-badge">
+                    <Icon name="check" />
+                  </span>
+                ) : null}
+              </div>
+              <button
+                className={hasPhoto ? "photo-filled" : "photo-empty"}
+                onClick={() => inputRefs[slot.key].current?.click()}
+                type="button"
+              >
+                {hasPhoto ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img alt={`${slot.label} do veículo`} className="vehicle-photo-preview" src={previewUrl} />
+                    {isUploading ? <span className="vehicle-photo-uploading">Enviando...</span> : null}
+                  </>
+                ) : (
+                  <span className="vehicle-photo-empty-content">
+                    <span aria-hidden="true" className="vehicle-photo-empty-icon">
+                      <Icon name="camera" />
+                    </span>
+                    <span>Adicionar foto</span>
+                  </span>
+                )}
+              </button>
+              <input
+                accept="image/*"
+                hidden
+                onChange={(event) => handleVehiclePhoto(event.target.files?.[0], slot.key)}
+                ref={inputRefs[slot.key]}
+                type="file"
+              />
+              {hasPhoto ? (
+                <span className={`vehicle-photo-status ${isUploading ? "is-uploading" : "is-success"}`}>
+                  <span aria-hidden="true" className="vehicle-photo-status-icon">
+                    {isUploading ? <Icon name="spark" /> : <Icon name="check" />}
+                  </span>
+                  {isUploading ? "Enviando..." : "Foto enviada"}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
       <FormToast message={error} />
-      <ActionButton onClick={() => go("vehicle-review")}>Enviar fotos</ActionButton>
-      <button className="outline-back" onClick={() => go("vehicle-data")} type="button">
+      <ActionButton onClick={() => go("vehicle-review")}>{editingVehicleId ? "Revisar alterações" : "Enviar fotos"}</ActionButton>
+      <button className="outline-back" onClick={() => go(editingVehicleId ? "vehicle-list" : "vehicle-data")} type="button">
         Voltar
       </button>
       <p className="security">▣ Seus dados estão protegidos e usados apenas para verificação.</p>
@@ -4254,18 +4818,23 @@ function VehiclePhotos({
 function VehicleReview({
   go,
   selectedBrand,
+  selectedWorkMode,
   token,
   vehicleForm,
   vehicleUploads,
 }: {
   go: (screen: Screen) => void;
   selectedBrand: VehicleBrandOption | null;
+  selectedWorkMode: DriverWorkMode | null;
   token?: string;
   vehicleForm: VehicleForm;
   vehicleUploads: VehicleUploads;
 }) {
+  const editingVehicleId = useDriverFlowStore((state) => state.editingVehicleId);
+  const setEditingVehicleId = useDriverFlowStore((state) => state.setEditingVehicleId);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const modeUi = getWorkModeUi(selectedWorkMode);
 
   async function handleTrackStatus() {
     if (!token || !selectedBrand || !vehicleForm.model || !vehicleForm.plate) {
@@ -4276,7 +4845,7 @@ function VehicleReview({
     setIsSubmitting(true);
     setError("");
     try {
-      await saveDriverVehicle(token, {
+      const payload = {
         brand: selectedBrand.nome,
         front_photo_file_id: vehicleUploads.front?.storage_file_id,
         front_photo_url: vehicleUploads.front?.url,
@@ -4288,8 +4857,17 @@ function VehicleReview({
         rear_photo_url: vehicleUploads.rear?.url,
         side_photo_file_id: vehicleUploads.side?.storage_file_id,
         side_photo_url: vehicleUploads.side?.url,
-      });
-      go("status");
+      };
+
+      if (editingVehicleId) {
+        await updateDriverVehicle(token, editingVehicleId, payload);
+        setEditingVehicleId(undefined);
+        go("vehicle-list");
+        return;
+      }
+
+      await saveDriverVehicle(token, payload);
+      go("dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível salvar o veículo.");
     } finally {
@@ -4305,21 +4883,49 @@ function VehicleReview({
         labels={["Dados do veículo", "Documentos e informações", "Fotos do veículo", "4 de 4"]}
         total={vehicleSteps}
       />
-      <div className="vehicle-hero">
-        <div>
-          <h1>Aguardando aprovação</h1>
-          <p>Seu cadastro foi enviado com sucesso.</p>
+      <div className="vehicle-hero vehicle-hero-stacked">
+        <div className="vehicle-hero-copy vehicle-hero-copy-wide">
+          <h1>{editingVehicleId ? "Alterações prontas para salvar" : "Cadastro enviado para análise"}</h1>
+          <p>{editingVehicleId ? "Revise as fotos atualizadas antes de salvar." : "Todos os dados foram recebidos com sucesso."}</p>
         </div>
-        <div className="mini-car large" />
+        <div className="vehicle-review-hero-art" aria-hidden="true">
+          <span className="vehicle-review-badge">
+            <Icon name="check" />
+          </span>
+          <span className="vehicle-review-spark one">+</span>
+          <span className="vehicle-review-spark two">+</span>
+          <span className="vehicle-review-spark three">+</span>
+          {vehicleUploads.front?.url ? (
+            <div className="vehicle-review-car-photo">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt={modeUi.reviewPhotoAlt} src={vehicleUploads.front.url} />
+            </div>
+          ) : (
+            <div className="vehicle-review-fallback-image">
+              <Image alt="" height={425} src={modeUi.emptyPreviewImageSrc} width={638} />
+            </div>
+          )}
+        </div>
       </div>
       <div className="checklist">
-        <span>✓ Fabricante selecionado</span>
-        <span>✓ Modelo e placa cadastrados</span>
-        <span>✓ Fotos enviadas</span>
+        <span><Icon name="check" /> Cadastro do motorista concluído</span>
+        <span><Icon name="check" /> Escolha da modalidade concluída</span>
+        <span><Icon name="check" /> CNH enviada</span>
+        <span><Icon name="check" /> Dados do veículo cadastrados</span>
+        <span><Icon name="check" /> Fotos do veículo enviadas</span>
+        <span><Icon name="check" /> Termos e Política aceitos</span>
       </div>
-      <div className="success-box">▣ Seu veículo está em análise. Em breve você receberá a aprovação.</div>
+      <div className="success-box review-success-box">
+        <span className="review-success-icon" aria-hidden="true">
+          <Icon name="shield" />
+        </span>
+        <div>
+          <strong>{editingVehicleId ? "As fotos do veículo serão atualizadas." : "Seu cadastro está em análise."}</strong>
+          <p>{editingVehicleId ? "Você pode substituir uma foto específica ou confirmar a troca de todas." : "Nossa equipe fará a avaliação e em breve entrará em contato."}</p>
+        </div>
+      </div>
       <FormToast message={error} />
-      <ActionButton onClick={handleTrackStatus}>{isSubmitting ? "Salvando..." : "Acompanhar status"}</ActionButton>
+      <ActionButton onClick={handleTrackStatus}>{isSubmitting ? "Salvando..." : editingVehicleId ? "Salvar alterações" : "Voltar ao início"}</ActionButton>
       <ActionButton iconDirection="left" onClick={() => go("vehicle-photos")} secondary>
         Voltar
       </ActionButton>
@@ -4336,6 +4942,7 @@ function VehicleReview({
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("login");
   const [resetContact, setResetContact] = useState<PasswordResetContact>({});
+  const [sessionError, setSessionError] = useState("");
   const [signupStep, setSignupStep] = useState(1);
   const [showSplash, setShowSplash] = useState(true);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
@@ -4352,11 +4959,24 @@ export default function Home() {
   const setFaceFile = useDriverFlowStore((state) => state.setFaceFile);
   const selectedBrand = useDriverFlowStore((state) => state.selectedBrand);
   const setSelectedBrand = useDriverFlowStore((state) => state.setSelectedBrand);
+  const selectedWorkMode = useDriverFlowStore((state) => state.selectedWorkMode);
+  const setSelectedWorkMode = useDriverFlowStore((state) => state.setSelectedWorkMode);
   const vehicleForm = useDriverFlowStore((state) => state.vehicleForm);
   const setVehicleForm = useDriverFlowStore((state) => state.setVehicleForm);
   const vehicleUploads = useDriverFlowStore((state) => state.vehicleUploads);
   const setVehicleUploads = useDriverFlowStore((state) => state.setVehicleUploads);
   const resetFlow = useDriverFlowStore((state) => state.resetFlow);
+  const handleAuthenticated = useCallback((nextToken: string) => {
+    setSessionError("");
+    setDriverToken(nextToken);
+  }, []);
+
+  const handleExpiredSession = useCallback(() => {
+    localStorage.removeItem("suwave-driver-token");
+    setDriverToken(undefined);
+    setScreen("login");
+    setSessionError("Sua sessão expirou. Entre novamente para continuar.");
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setShowSplash(false), 2300);
@@ -4375,6 +4995,18 @@ export default function Home() {
 
     return () => window.clearTimeout(restoreTimer);
   }, []);
+
+  useEffect(() => {
+    function handleAuthExpired() {
+      handleExpiredSession();
+    }
+
+    window.addEventListener(DRIVER_AUTH_EXPIRED_EVENT, handleAuthExpired);
+
+    return () => {
+      window.removeEventListener(DRIVER_AUTH_EXPIRED_EVENT, handleAuthExpired);
+    };
+  }, [handleExpiredSession]);
 
   useEffect(() => {
     const isStandalone =
@@ -4427,6 +5059,7 @@ export default function Home() {
     localStorage.removeItem("suwave-driver-token");
     setDriverToken(undefined);
     setScreen("login");
+    setSessionError("");
   }, []);
 
   useEffect(() => {
@@ -4474,7 +5107,7 @@ export default function Home() {
             cnhFront={cnhFront}
             faceFile={faceFile}
             go={go}
-            onAuthenticated={setDriverToken}
+            onAuthenticated={handleAuthenticated}
             resetFlow={resetFlow}
             setCnhBack={setCnhBack}
             setCnhFront={setCnhFront}
@@ -4493,14 +5126,37 @@ export default function Home() {
         return <RegisterTrip go={go} token={driverToken} />;
       case "trip-history":
         return <TripHistory go={go} token={driverToken} />;
+      case "vehicle-list":
+        return <VehicleListScreen go={go} token={driverToken} />;
+      case "vehicle-mode":
+        return <VehicleMode go={go} selectedWorkMode={selectedWorkMode} setSelectedWorkMode={setSelectedWorkMode} />;
       case "vehicle-brand":
-        return <VehicleBrand go={go} selectedBrand={selectedBrand} setSelectedBrand={setSelectedBrand} />;
+        return (
+          <VehicleData
+            form={vehicleForm}
+            go={go}
+            selectedBrand={selectedBrand}
+            selectedWorkMode={selectedWorkMode}
+            setForm={setVehicleForm}
+            setSelectedBrand={setSelectedBrand}
+          />
+        );
       case "vehicle-data":
-        return <VehicleData form={vehicleForm} go={go} setForm={setVehicleForm} />;
+        return (
+          <VehicleData
+            form={vehicleForm}
+            go={go}
+            selectedBrand={selectedBrand}
+            selectedWorkMode={selectedWorkMode}
+            setForm={setVehicleForm}
+            setSelectedBrand={setSelectedBrand}
+          />
+        );
       case "vehicle-photos":
         return (
           <VehiclePhotos
             go={go}
+            selectedWorkMode={selectedWorkMode}
             setVehicleUploads={setVehicleUploads}
             token={driverToken}
             vehicleUploads={vehicleUploads}
@@ -4511,28 +5167,33 @@ export default function Home() {
           <VehicleReview
             go={go}
             selectedBrand={selectedBrand}
+            selectedWorkMode={selectedWorkMode}
             token={driverToken}
             vehicleForm={vehicleForm}
             vehicleUploads={vehicleUploads}
           />
         );
       default:
-        return <Login go={go} onAuthenticated={setDriverToken} />;
+        return <Login initialError={sessionError} go={go} onAuthenticated={handleAuthenticated} onClearInitialError={() => setSessionError("")} />;
     }
   }, [
     cnhBack,
     cnhFront,
     driverToken,
     faceFile,
+    handleAuthenticated,
     handleLogout,
     resetFlow,
     resetContact,
     screen,
+    sessionError,
     selectedBrand,
+    selectedWorkMode,
     setCnhBack,
     setCnhFront,
     setFaceFile,
     setSelectedBrand,
+    setSelectedWorkMode,
     setSignupForm,
     setSignupStep,
     setVehicleForm,

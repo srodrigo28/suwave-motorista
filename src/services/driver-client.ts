@@ -4,6 +4,7 @@ function getApiBaseUrl() {
 }
 
 const apiBaseUrl = getApiBaseUrl();
+export const DRIVER_AUTH_EXPIRED_EVENT = "suwave-driver-auth-expired";
 
 type ApiEnvelope<T> = {
   data: T;
@@ -241,6 +242,10 @@ async function parseResponse<T>(response: Response) {
   const body = (await response.json().catch(() => ({}))) as Partial<ApiEnvelope<T>> & Record<string, unknown>;
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(DRIVER_AUTH_EXPIRED_EVENT));
+      throw new DriverApiError("Sua sessão expirou. Entre novamente para continuar.", "token_expired");
+    }
     throw apiError(body);
   }
 
@@ -437,6 +442,7 @@ export async function saveDriverVehicle(
     rear_photo_url?: string | null;
     side_photo_file_id?: number | string | null;
     side_photo_url?: string | null;
+    year?: string | number | null;
   },
 ) {
   const response = await apiRequest("/driver/vehicle", {
@@ -463,6 +469,7 @@ export async function updateDriverVehicle(
     rear_photo_url?: string | null;
     side_photo_file_id?: number | string | null;
     side_photo_url?: string | null;
+    year?: string | number | null;
   },
 ) {
   const response = await apiRequest(`/driver/vehicle/${vehicleId}`, {

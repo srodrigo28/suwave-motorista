@@ -25,7 +25,10 @@ export type DriverSignupForm = {
 export type VehicleForm = {
   model: string;
   plate: string;
+  year: string;
 };
+
+export type DriverWorkMode = "car_trip_delivery" | "car_delivery" | "moto_delivery" | "bike_delivery";
 
 export type VehicleUploads = {
   front?: UploadResult;
@@ -53,12 +56,15 @@ const initialSignupForm: DriverSignupForm = {
 const initialVehicleForm: VehicleForm = {
   model: "",
   plate: "",
+  year: "",
 };
 
 type DriverFlowState = {
   cnhBack?: File;
   cnhFront?: File;
+  editingVehicleId?: string;
   faceFile?: File;
+  selectedWorkMode: DriverWorkMode | null;
   selectedBrand: VehicleBrandOption | null;
   signupForm: DriverSignupForm;
   vehicleForm: VehicleForm;
@@ -66,8 +72,10 @@ type DriverFlowState = {
   resetFlow: () => void;
   setCnhBack: (file: File) => void;
   setCnhFront: (file: File) => void;
+  setEditingVehicleId: (vehicleId?: string) => void;
   setFaceFile: (file: File) => void;
   setSelectedBrand: (brand: VehicleBrandOption | null) => void;
+  setSelectedWorkMode: (mode: DriverWorkMode | null) => void;
   setSignupForm: (form: DriverSignupForm) => void;
   setVehicleForm: (form: VehicleForm) => void;
   setVehicleUploads: (uploads: VehicleUploads) => void;
@@ -78,7 +86,9 @@ type DriverFlowState = {
 export const useDriverFlowStore = create<DriverFlowState>()((set) => ({
   cnhBack: undefined,
   cnhFront: undefined,
+  editingVehicleId: undefined,
   faceFile: undefined,
+  selectedWorkMode: null,
   selectedBrand: null,
   signupForm: initialSignupForm,
   vehicleForm: initialVehicleForm,
@@ -87,7 +97,9 @@ export const useDriverFlowStore = create<DriverFlowState>()((set) => ({
     set({
       cnhBack: undefined,
       cnhFront: undefined,
+      editingVehicleId: undefined,
       faceFile: undefined,
+      selectedWorkMode: null,
       selectedBrand: null,
       signupForm: initialSignupForm,
       vehicleForm: initialVehicleForm,
@@ -95,8 +107,10 @@ export const useDriverFlowStore = create<DriverFlowState>()((set) => ({
     }),
   setCnhBack: (upload) => set({ cnhBack: upload }),
   setCnhFront: (upload) => set({ cnhFront: upload }),
+  setEditingVehicleId: (vehicleId) => set({ editingVehicleId: vehicleId }),
   setFaceFile: (file) => set({ faceFile: file }),
   setSelectedBrand: (brand) => set({ selectedBrand: brand }),
+  setSelectedWorkMode: (mode) => set({ selectedWorkMode: mode }),
   setSignupForm: (form) => set({ signupForm: form }),
   setVehicleForm: (form) => set({ vehicleForm: form }),
   setVehicleUploads: (uploads) => set({ vehicleUploads: uploads }),
