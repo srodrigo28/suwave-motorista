@@ -403,6 +403,13 @@ function Icon({ name }: { name: string }) {
           <path d="M3 10h18" />
         </svg>
       );
+    case "clock":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      );
     case "id":
       return (
         <svg {...common}>
@@ -3684,10 +3691,30 @@ function TripHistoryCard({
 }
 
 function TripDetailItem({ label, value }: { label: string; value: string }) {
+  const iconName =
+    label === "Origem"
+      ? "locate"
+      : label === "Destino"
+        ? "map"
+        : label === "Ida" || label === "Retorno"
+          ? "calendar"
+          : label.includes("Distância")
+            ? "road"
+            : label === "Duração estimada"
+              ? "clock"
+              : label === "Status"
+                ? "check"
+                : "help";
+
   return (
-    <span>
-      <small>{label}</small>
-      <strong>{value}</strong>
+    <span className="trip-detail-item">
+      <i aria-hidden="true" className="trip-detail-item-icon">
+        <Icon name={iconName} />
+      </i>
+      <span className="trip-detail-item-copy">
+        <small>{label}</small>
+        <strong>{value}</strong>
+      </span>
     </span>
   );
 }
@@ -4837,8 +4864,14 @@ function VehicleReview({
   const modeUi = getWorkModeUi(selectedWorkMode);
 
   async function handleTrackStatus() {
-    if (!token || !selectedBrand || !vehicleForm.model || !vehicleForm.plate) {
-      setError("Informe marca, modelo e placa antes de enviar.");
+    const hasRequiredPlate = !modeUi.needsPlate || Boolean(vehicleForm.plate.trim());
+
+    if (!token || !selectedBrand || !selectedBrand.nome.trim() || !vehicleForm.model.trim() || !hasRequiredPlate) {
+      setError(
+        modeUi.needsPlate
+          ? "Informe marca, modelo e placa antes de enviar."
+          : "Informe marca e modelo antes de enviar.",
+      );
       return;
     }
 
@@ -4852,7 +4885,7 @@ function VehicleReview({
         interior_photo_file_id: vehicleUploads.interior?.storage_file_id,
         interior_photo_url: vehicleUploads.interior?.url,
         model: vehicleForm.model,
-        plate: vehicleForm.plate,
+        plate: modeUi.needsPlate ? vehicleForm.plate : "BIKE",
         rear_photo_file_id: vehicleUploads.rear?.storage_file_id,
         rear_photo_url: vehicleUploads.rear?.url,
         side_photo_file_id: vehicleUploads.side?.storage_file_id,

@@ -3838,10 +3838,35 @@ h2 {
   background: #f7fafb;
   border: 1px solid #eef0f4;
   border-radius: 10px;
-  display: grid;
-  gap: 5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
   padding: 12px;
+}
+
+.trip-detail-item-icon {
+  align-items: center;
+  background: #fff3cf;
+  border-radius: 12px;
+  color: #d9a800;
+  display: inline-flex;
+  flex: 0 0 38px;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.trip-detail-item-icon svg {
+  height: 18px;
+  width: 18px;
+}
+
+.trip-detail-item-copy {
+  display: grid;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .trip-detail-grid small {
