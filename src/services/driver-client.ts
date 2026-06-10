@@ -90,7 +90,9 @@ function apiError(body: Record<string, unknown>) {
   const message = typeof body.message === "string" ? body.message : undefined;
 
   if (code === "internal_error") {
-    return new DriverApiError("A API retornou erro interno. Verifique o deploy, migrations e logs do servidor.", code, fields);
+    const ref = typeof errorMessage === "string" ? errorMessage.match(/\[ref:[^\]]+\]/)?.[0] ?? "" : "";
+    const suffix = ref ? ` ${ref}` : "";
+    return new DriverApiError(`Erro interno no servidor. Tente novamente em instantes.${suffix}`, code, fields);
   }
 
   if (message?.includes("semantic errors")) {
@@ -160,14 +162,28 @@ export type DriverProfile = {
   user_id: string;
   full_name: string;
   email: string;
+  cpf?: string | null;
+  cnpj?: string | null;
+  birth_date?: string | null;
+  gender?: string | null;
   phone?: string | null;
   pix_account?: string | null;
   pix_key_type?: string | null;
   status: string;
   is_online: boolean;
+  online_since?: string | null;
   last_accuracy_meters?: number | null;
   last_latitude?: number | null;
   last_longitude?: number | null;
+  last_location_at?: string | null;
+  approval_started_at?: string | null;
+  approved_at?: string | null;
+  rejected_at?: string | null;
+  rejection_reason?: string | null;
+  rating_average?: number | null;
+  rating_count?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   vehicles: DriverVehicle[];
 };
 
@@ -177,6 +193,7 @@ export type DriverRideRequest = {
   destination_label?: string | null;
   distance_meters?: number | null;
   driver_id?: string | null;
+  driver?: DriverProfile | null;
   id: string;
   origin_label?: string | null;
   passenger_name?: string | null;
@@ -254,8 +271,12 @@ async function parseResponse<T>(response: Response) {
 
 async function apiRequest(path: string, init?: RequestInit) {
   try {
-    return await fetch(`${apiBaseUrl}${path}`, init);
-  } catch {
+    const signal = AbortSignal.timeout(15000);
+    return await fetch(`${apiBaseUrl}${path}`, { signal, ...init });
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error("A API demorou muito para responder. Verifique sua conexão.");
+    }
     throw new Error("API principal indisponível. Verifique a conexão ou a URL configurada da API SUWAVE.");
   }
 }
