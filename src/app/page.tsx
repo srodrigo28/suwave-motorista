@@ -38,6 +38,7 @@ import {
   DRIVER_AUTH_EXPIRED_EVENT,
   type DriverDelivery,
   type DriverEarnings,
+  type DriverEarningsHistory,
   type DriverHistoryItem,
   type DriverProfile,
   type DriverRideRequest,
@@ -64,6 +65,7 @@ type Screen =
   | "status"
   | "dashboard"
   | "profile"
+  | "finance"
   | "register-trip"
   | "trip-history"
   | "vehicle-list"
@@ -1021,6 +1023,29 @@ function Login({
     }
   }
 
+  async function loginWithRetry(isEmail: boolean) {
+    const credentials = {
+      ...(isEmail ? { email: identifier.trim() } : { whatsapp: onlyDigits(identifier) }),
+      password,
+    };
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await loginDriverAccount(credentials);
+      } catch (err) {
+        const shouldRetry = err instanceof DriverApiError && err.code === "internal_error" && attempt < 3;
+
+        if (!shouldRetry) {
+          throw err;
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, attempt * 650));
+      }
+    }
+
+    return loginDriverAccount(credentials);
+  }
+
   async function handleLogin() {
     onClearInitialError?.();
     setIsSubmitting(true);
@@ -1028,10 +1053,7 @@ function Login({
     setSuccess("");
     try {
       const isEmail = identifier.includes("@");
-      const session = await loginDriverAccount({
-        ...(isEmail ? { email: identifier.trim() } : { whatsapp: onlyDigits(identifier) }),
-        password,
-      });
+      const session = await loginWithRetry(isEmail);
       localStorage.setItem("suwave-driver-token", session.access_token);
       onAuthenticated(session.access_token);
       setSuccess(`Bem-vindo, ${session.user.full_name}.`);
@@ -2235,16 +2257,22 @@ function getCurrentPosition() {
 
 async function sendCurrentDriverLocation(token: string) {
   const position = await getCurrentPosition();
-  await pingDriverLocation(token, {
-    accuracy_meters: position.coords.accuracy,
-    latitude: position.coords.latitude,
-    longitude: position.coords.longitude,
-  });
-  return {
+  const location = {
     accuracy_meters: position.coords.accuracy,
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
   };
+  await sendDriverMapLocation(token, location);
+  return location;
+}
+
+async function sendDriverMapLocation(token: string, location: DriverMapLocation) {
+  await pingDriverLocation(token, {
+    accuracy_meters: location.accuracy_meters,
+    latitude: location.latitude,
+    longitude: location.longitude,
+  });
+  return location;
 }
 
 function getMapTileUrl(x: number, y: number, z: number) {
@@ -2612,6 +2640,45 @@ function formatRideTime(value: string) {
   return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatFinanceDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Data não informada";
+  }
+
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function formatFinanceCurrency(cents: number) {
+  return (cents / 100).toLocaleString("pt-BR", {
+    currency: "BRL",
+    style: "currency",
+  });
+}
+
+function isSameFinanceDay(value: string, target: Date) {
+  const date = new Date(value);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getFullYear() === target.getFullYear() &&
+    date.getMonth() === target.getMonth() &&
+    date.getDate() === target.getDate()
+  );
+}
+
+function isSameFinanceMonth(value: string, target: Date) {
+  const date = new Date(value);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getFullYear() === target.getFullYear() &&
+    date.getMonth() === target.getMonth()
+  );
+}
+
 function formatDriverPhone(value?: string | null) {
   const digits = onlyDigits(value ?? "");
 
@@ -2628,6 +2695,20 @@ function formatDriverPhone(value?: string | null) {
 
 function getVehicleImageUrl(vehicle?: DriverProfile["vehicles"][number]) {
   return vehicle?.front_photo_url || vehicle?.side_photo_url || vehicle?.rear_photo_url || vehicle?.interior_photo_url || "";
+}
+
+function getVehicleFallbackImage(vehicle?: DriverProfile["vehicles"][number]) {
+  const descriptor = [vehicle?.brand, vehicle?.model, vehicle?.plate].filter(Boolean).join(" ").toLowerCase();
+
+  if (descriptor.includes("bike") || descriptor.includes("bicicleta")) {
+    return "/motorista/workmode2-bike.png";
+  }
+
+  if (descriptor.includes("moto")) {
+    return "/motorista/workmode2-moto.png";
+  }
+
+  return "/motorista/inicio-carro-cidade.png";
 }
 
 function getDriverFacePhotoUrl(profile?: DriverProfile | null) {
@@ -2649,6 +2730,10 @@ function getVehicleStatusLabel(status?: string | null) {
     default:
       return status;
   }
+}
+
+function isVehicleApproved(vehicle?: DriverProfile["vehicles"][number]) {
+  return vehicle?.status?.toUpperCase() === "APROVADO";
 }
 
 function formatVehicleYear(value?: string | number | null) {
@@ -3766,6 +3851,168 @@ function TripDetailItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+type FinanceFilter = "today" | "month" | "all";
+
+const financeFilterLabels: Record<FinanceFilter, string> = {
+  all: "Todos",
+  month: "Mês",
+  today: "Hoje",
+};
+
+function FinanceRecordCard({ item }: { item: DriverEarningsHistory }) {
+  return (
+    <article className="finance-record-card">
+      <span className="finance-record-icon">
+        <Icon name={item.type === "planned_trip" ? "road" : "car"} />
+      </span>
+      <span>
+        <strong>{item.title || "Registro financeiro"}</strong>
+        <small>{item.description || item.status}</small>
+        <small>{formatFinanceDate(item.created_at)}</small>
+      </span>
+      <b>{item.amount || formatFinanceCurrency(item.amount_cents)}</b>
+    </article>
+  );
+}
+
+function FinanceScreen({ go, token }: { go: (screen: Screen) => void; token?: string }) {
+  const [earnings, setEarnings] = useState<DriverEarnings | null>(null);
+  const [filter, setFilter] = useState<FinanceFilter>("today");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const today = useMemo(() => new Date(), []);
+
+  const records = useMemo(() => {
+    const history = earnings?.history ?? [];
+
+    if (filter === "today") {
+      return history.filter((item) => isSameFinanceDay(item.created_at, today));
+    }
+
+    if (filter === "month") {
+      return history.filter((item) => isSameFinanceMonth(item.created_at, today));
+    }
+
+    return history;
+  }, [earnings?.history, filter, today]);
+
+  const filteredTotal = records.reduce((total, item) => total + item.amount_cents, 0);
+
+  const loadFinance = useCallback(async () => {
+    if (!token) {
+      setError("Entre novamente para ver seu financeiro.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError("");
+    try {
+      setEarnings(await getDriverEarnings(token));
+    } catch (err) {
+      setEarnings(null);
+      setError(err instanceof Error ? err.message : "Não foi possível carregar o financeiro agora.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadFinance();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadFinance]);
+
+  return (
+    <section className="scroll-screen finance-screen">
+      <AppHeader onBack={() => go("dashboard")} />
+      <div className="finance-title-row">
+        <div>
+          <span>Financeiro</span>
+          <h1>Ganhos e registros</h1>
+        </div>
+        <button aria-label="Atualizar financeiro" disabled={isLoading} onClick={loadFinance} type="button">
+          <FiRefreshCw aria-hidden="true" />
+        </button>
+      </div>
+
+      <section className="finance-summary" aria-label="Resumo financeiro">
+        <div>
+          <small>Saldo disponível</small>
+          <strong>{earnings?.available_balance ?? "R$ 0,00"}</strong>
+        </div>
+        <div>
+          <small>Hoje</small>
+          <b>{earnings?.today_total ?? "R$ 0,00"}</b>
+        </div>
+        <div>
+          <small>Mês</small>
+          <b>{earnings?.month_total ?? "R$ 0,00"}</b>
+        </div>
+        <div>
+          <small>Rotas</small>
+          <b>{earnings?.estimated_trip_total ?? "R$ 0,00"}</b>
+        </div>
+      </section>
+
+      <div className="finance-filter" aria-label="Filtro financeiro">
+        {(Object.keys(financeFilterLabels) as FinanceFilter[]).map((option) => (
+          <button
+            aria-pressed={filter === option}
+            className={filter === option ? "active" : ""}
+            key={option}
+            onClick={() => setFilter(option)}
+            type="button"
+          >
+            {financeFilterLabels[option]}
+          </button>
+        ))}
+      </div>
+
+      <div className="finance-total-line">
+        <span>{financeFilterLabels[filter]}</span>
+        <strong>{formatFinanceCurrency(filteredTotal)}</strong>
+      </div>
+
+      <FormToast message={error} />
+      {isLoading ? <p className="finance-empty">Carregando financeiro...</p> : null}
+      {!isLoading && records.length === 0 ? (
+        <p className="finance-empty">Nenhum registro financeiro encontrado para este filtro.</p>
+      ) : null}
+      <div className="finance-record-list">
+        {records.map((item) => (
+          <FinanceRecordCard item={item} key={item.id} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function VehicleWaitingCard({ vehicle }: { vehicle: DriverProfile["vehicles"][number] }) {
+  const vehicleImageUrl = getVehicleImageUrl(vehicle);
+  const fallbackImage = getVehicleFallbackImage(vehicle);
+  const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "Veículo cadastrado";
+
+  return (
+    <article className="vehicle-waiting-card">
+      <div className="vehicle-waiting-copy">
+        <span>{getVehicleStatusLabel(vehicle.status)}</span>
+        <strong>Aguarde liberar</strong>
+        <p>Seu veículo já foi recebido e está em análise. Assim que for aprovado, o botão Online será liberado.</p>
+      </div>
+      <div className="vehicle-waiting-media">
+        {vehicleImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt={vehicleName} src={vehicleImageUrl} />
+        ) : (
+          <Image alt={vehicleName} height={425} src={fallbackImage} width={638} />
+        )}
+      </div>
+    </article>
+  );
+}
+
 function Dashboard({
   go,
   onLogout,
@@ -3783,8 +4030,6 @@ function Dashboard({
   const [deliveryOffers, setDeliveryOffers] = useState<DriverDelivery[]>([]);
   const [busyDeliveryId, setBusyDeliveryId] = useState<string | null>(null);
   const [rideFeedback, setRideFeedback] = useState("");
-  const [earnings, setEarnings] = useState<DriverEarnings | null>(null);
-  const [earningsError, setEarningsError] = useState("");
   const [isDriverMenuOpen, setIsDriverMenuOpen] = useState(false);
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [mapLocation, setMapLocation] = useState<DriverMapLocation>(defaultDriverMapLocation);
@@ -3793,7 +4038,14 @@ function Dashboard({
   const [mapZoom, setMapZoom] = useState(defaultDriverMapZoom);
   const [shouldUseGoogleMaps, setShouldUseGoogleMaps] = useState(Boolean(googleMapsApiKey));
   const [isLocating, setIsLocating] = useState(false);
-  const shouldShowAddVehicle = driverProfile ? driverProfile.vehicles.length === 0 : false;
+  const registeredVehicles = driverProfile?.vehicles ?? [];
+  const approvedVehicle = registeredVehicles.find(isVehicleApproved);
+  const pendingVehicle = registeredVehicles.find((vehicle) => !isVehicleApproved(vehicle));
+  const hasRegisteredVehicle = registeredVehicles.length > 0;
+  const hasApprovedVehicle = Boolean(approvedVehicle);
+  const shouldShowAddVehicle = driverProfile ? !hasRegisteredVehicle : false;
+  const shouldShowVehicleWaiting = hasRegisteredVehicle && !hasApprovedVehicle && Boolean(pendingVehicle);
+  const effectiveIsOnline = hasApprovedVehicle && isOnline;
   const mapPlaceLabel = formatDriverMapPlace(mapPlace);
 
   useEffect(() => {
@@ -3811,8 +4063,12 @@ function Dashboard({
           setMapLocation(location);
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Não foi possível atualizar sua localização.");
+        try {
+          await sendDriverMapLocation(activeToken, mapLocation);
+        } catch {
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : "Não foi possível atualizar sua localização.");
+          }
         }
       }
     }
@@ -3823,7 +4079,7 @@ function Dashboard({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [isOnline, token]);
+  }, [isOnline, mapLocation, token]);
 
   useEffect(() => {
     if (!token) {
@@ -3837,8 +4093,12 @@ function Dashboard({
       try {
         const profile = await getDriverProfile(activeToken);
         if (!cancelled) {
+          const hasApprovedProfileVehicle = (profile.vehicles ?? []).some(isVehicleApproved);
           setDriverProfile(profile);
-          setIsOnline(profile.is_online);
+          setIsOnline(hasApprovedProfileVehicle && profile.is_online);
+          if (!hasApprovedProfileVehicle) {
+            setError("");
+          }
           if (profile.last_latitude != null && profile.last_longitude != null) {
             setMapLocation({
               accuracy_meters: profile.last_accuracy_meters,
@@ -3883,36 +4143,6 @@ function Dashboard({
       cancelled = true;
     };
   }, [mapLocation]);
-
-  useEffect(() => {
-    if (!token) {
-      return;
-    }
-
-    const activeToken = token;
-    let cancelled = false;
-
-    async function loadEarnings() {
-      try {
-        const data = await getDriverEarnings(activeToken);
-        if (!cancelled) {
-          setEarnings(data);
-          setEarningsError("");
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setEarnings(null);
-          setEarningsError(err instanceof Error ? err.message : "Não foi possível carregar seus ganhos.");
-        }
-      }
-    }
-
-    loadEarnings();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3975,10 +4205,16 @@ function Dashboard({
       return;
     }
 
+    if (!hasApprovedVehicle) {
+      setIsOnline(false);
+      setError("");
+      return;
+    }
+
     setIsSubmitting(true);
     setError("");
     try {
-      if (isOnline) {
+      if (effectiveIsOnline) {
         const availability = await setDriverOffline(token);
         setIsOnline(availability.is_online);
         setDriverProfile(availability.driver);
@@ -3987,7 +4223,12 @@ function Dashboard({
         return;
       }
 
-      const location = await sendCurrentDriverLocation(token);
+      let location = mapLocation;
+      try {
+        location = await sendCurrentDriverLocation(token);
+      } catch {
+        location = await sendDriverMapLocation(token, mapLocation);
+      }
       setMapLocation(location);
       const availability = await setDriverOnline(token);
       setIsOnline(availability.is_online);
@@ -4011,8 +4252,8 @@ function Dashboard({
 
       const position = await getCurrentPosition();
       setMapLocation(positionToDriverMapLocation(position));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível acessar sua localização.");
+    } catch {
+      setError("");
     } finally {
       setIsLocating(false);
     }
@@ -4033,11 +4274,6 @@ function Dashboard({
           : await declineDriverRideRequest(token, rideRequestId);
       setRideRequests((requests) => requests.filter((request) => request.id !== rideRequestId));
       setRideFeedback(updated.status === "ACEITA" ? "Corrida aceita." : "Corrida recusada.");
-      if (updated.status === "ACEITA") {
-        const data = await getDriverEarnings(token);
-        setEarnings(data);
-        setEarningsError("");
-      }
     } catch (err) {
       setRideFeedback(err instanceof Error ? err.message : "Não foi possível responder a corrida.");
     } finally {
@@ -4057,9 +4293,6 @@ function Dashboard({
       await acceptDriverDelivery(token, orderId);
       setDeliveryOffers((offers) => offers.filter((offer) => offer.id !== orderId));
       setRideFeedback("Entrega aceita. Veja os detalhes no histórico.");
-      const data = await getDriverEarnings(token);
-      setEarnings(data);
-      setEarningsError("");
     } catch (err) {
       setRideFeedback(err instanceof Error ? err.message : "Não foi possível aceitar a entrega.");
     } finally {
@@ -4144,32 +4377,11 @@ function Dashboard({
         </div>
         <div className="sheet-title">
           <div className="map-location-copy">
-            <span>{isOnline ? "Disponível em" : "Localização atual"}</span>
+            <span>{effectiveIsOnline ? "Disponível em" : "Localização atual"}</span>
             <strong>{mapPlaceLabel}</strong>
           </div>
         </div>
-        <FormToast message={error} />
-        <section className="driver-earnings-card" aria-label="Resumo de ganhos">
-          <div className="driver-earnings-balance">
-            <span>Saldo disponível</span>
-            <strong>{earnings?.available_balance ?? "R$ 0,00"}</strong>
-          </div>
-          <div className="driver-earnings-grid">
-            <span>
-              <small>Hoje</small>
-              <b>{earnings?.today_total ?? "R$ 0,00"}</b>
-            </span>
-            <span>
-              <small>Mês</small>
-              <b>{earnings?.month_total ?? "R$ 0,00"}</b>
-            </span>
-            <span>
-              <small>Rotas</small>
-              <b>{earnings?.estimated_trip_total ?? "R$ 0,00"}</b>
-            </span>
-          </div>
-          {earningsError ? <p>{earningsError}</p> : null}
-        </section>
+        <FormToast message={shouldShowVehicleWaiting ? "" : error} />
         {rideRequests.length ? (
           <div className="ride-request-stack">
             {rideRequests.slice(0, 2).map((rideRequest) => (
@@ -4253,8 +4465,9 @@ function Dashboard({
           </div>
         ) : null}
         {rideFeedback ? <p className="ride-feedback">{rideFeedback}</p> : null}
+        {shouldShowVehicleWaiting && pendingVehicle ? <VehicleWaitingCard vehicle={pendingVehicle} /> : null}
         <ActionButton onClick={handleToggleOnline}>
-          {isSubmitting ? "Atualizando..." : isOnline ? "Ficar offline" : "Online"}
+          {isSubmitting ? "Atualizando..." : effectiveIsOnline ? "Offline" : hasApprovedVehicle ? "Online" : "Offline"}
         </ActionButton>
         {shouldShowAddVehicle ? (
           <ActionButton onClick={() => go("vehicle-mode")} secondary>
@@ -4295,6 +4508,16 @@ function Dashboard({
             >
               <Icon name="user" />
               <span>Perfil</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsDriverMenuOpen(false);
+                go("finance");
+              }}
+              type="button"
+            >
+              <Icon name="pix" />
+              <span>Financeiro</span>
             </button>
             <button type="button">
               <Icon name="settings" />
@@ -4928,7 +5151,7 @@ function VehiclePhotos({
   }
 
   return (
-    <section className="scroll-screen">
+    <section className="scroll-screen vehicle-photos-screen">
       <AppHeader onBack={() => go(editingVehicleId ? "vehicle-list" : "vehicle-data")} />
       <Progress current={3} total={vehicleSteps} />
       <p className="step-label">3 de 4</p>
@@ -5325,6 +5548,8 @@ export default function Home() {
         return <Dashboard go={go} onLogout={handleLogout} token={driverToken} />;
       case "profile":
         return <DriverProfileScreen go={go} onLogout={handleLogout} token={driverToken} />;
+      case "finance":
+        return <FinanceScreen go={go} token={driverToken} />;
       case "register-trip":
         return <RegisterTrip go={go} token={driverToken} />;
       case "trip-history":

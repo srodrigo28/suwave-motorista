@@ -90,9 +90,7 @@ function apiError(body: Record<string, unknown>) {
   const message = typeof body.message === "string" ? body.message : undefined;
 
   if (code === "internal_error") {
-    const ref = typeof errorMessage === "string" ? errorMessage.match(/\[ref:[^\]]+\]/)?.[0] ?? "" : "";
-    const suffix = ref ? ` ${ref}` : "";
-    return new DriverApiError(`Erro interno no servidor. Tente novamente em instantes.${suffix}`, code, fields);
+    return new DriverApiError("O servidor oscilou agora. Tente entrar novamente em instantes.", code, fields);
   }
 
   if (message?.includes("semantic errors")) {

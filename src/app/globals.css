@@ -3053,6 +3053,67 @@ h2 {
   text-align: center;
 }
 
+.vehicle-waiting-card {
+  align-items: center;
+  background: linear-gradient(135deg, #fff9df 0%, #fff 58%);
+  border: 1.5px solid #ffd45b;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgb(8 26 54 / 0.08);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  margin: 0 0 12px;
+  min-height: 104px;
+  overflow: hidden;
+  padding: 12px 10px 12px 14px;
+}
+
+.vehicle-waiting-copy {
+  min-width: 0;
+}
+
+.vehicle-waiting-copy span {
+  color: #8f6400;
+  display: block;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+}
+
+.vehicle-waiting-copy strong {
+  color: #082b40;
+  display: block;
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+.vehicle-waiting-copy p {
+  color: #516474;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.vehicle-waiting-media {
+  align-items: center;
+  display: flex;
+  height: 78px;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.vehicle-waiting-media img {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
 .trip-detail-actions {
   display: grid;
   gap: 10px;
@@ -3143,6 +3204,208 @@ h2 {
   font-size: 12px;
   font-weight: 750;
   margin: 0;
+}
+
+.finance-screen {
+  background: #fff;
+  color: #071a36;
+  padding: 22px 22px 30px;
+}
+
+.finance-title-row {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 46px;
+  margin: 12px 0 16px;
+}
+
+.finance-title-row span {
+  color: #6d7f8d;
+  display: block;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.finance-title-row h1 {
+  color: #071a36;
+  font-size: 28px;
+  line-height: 1;
+  margin: 3px 0 0;
+}
+
+.finance-title-row button {
+  align-items: center;
+  background: #f5f8fa;
+  border: 1px solid #e2ebf0;
+  border-radius: 8px;
+  color: #0a2d43;
+  display: grid;
+  height: 46px;
+  justify-content: center;
+  padding: 0;
+  width: 46px;
+}
+
+.finance-title-row svg {
+  height: 21px;
+  width: 21px;
+}
+
+.finance-summary {
+  background: #f7fafb;
+  border: 1px solid #dce7ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.finance-summary div:first-child {
+  align-items: center;
+  border-bottom: 1px solid #e4edf2;
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  padding-bottom: 10px;
+}
+
+.finance-summary div:not(:first-child) {
+  background: #fff;
+  border: 1px solid #edf2f5;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-height: 58px;
+  padding: 9px;
+}
+
+.finance-summary small {
+  color: #667f90;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.finance-summary strong {
+  color: #071a36;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.finance-summary b {
+  color: #0b2536;
+  font-size: 14px;
+}
+
+.finance-filter {
+  background: #f4f7f8;
+  border: 1px solid #dfe8ee;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 12px;
+  padding: 4px;
+}
+
+.finance-filter button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #5b7282;
+  font-size: 13px;
+  font-weight: 900;
+  min-height: 38px;
+}
+
+.finance-filter button.active {
+  background: var(--suwave-yellow);
+  color: #071a36;
+}
+
+.finance-total-line {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 12px;
+}
+
+.finance-total-line span {
+  color: #6d7f8d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.finance-total-line strong {
+  color: #071a36;
+  font-size: 20px;
+}
+
+.finance-record-list {
+  display: grid;
+  gap: 10px;
+}
+
+.finance-record-card {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e7eef2;
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgb(8 26 54 / 0.07);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  min-height: 76px;
+  padding: 12px;
+}
+
+.finance-record-icon {
+  align-items: center;
+  background: #fff7d6;
+  border-radius: 8px;
+  color: #071a36;
+  display: grid;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.finance-record-icon svg {
+  height: 20px;
+  width: 20px;
+}
+
+.finance-record-card strong {
+  color: #071a36;
+  display: block;
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.finance-record-card small {
+  color: #667f90;
+  display: block;
+  font-size: 12px;
+  line-height: 1.25;
+  margin-top: 3px;
+}
+
+.finance-record-card b {
+  color: #0a6b4f;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.finance-empty {
+  color: #667f90;
+  font-size: 14px;
+  font-weight: 750;
+  margin: 18px 0;
+  text-align: center;
 }
 
 .driver-profile-screen {
@@ -5036,6 +5299,12 @@ h2 {
   font-size: 28px;
   line-height: 1.04;
   margin-bottom: 12px;
+}
+
+.vehicle-photos-screen h1 {
+  font-size: clamp(27px, 5.6vw, 36px);
+  line-height: 1.02;
+  margin-bottom: 8px;
 }
 
 .vehicle-form-subtitle {
