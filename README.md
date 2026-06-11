@@ -18,6 +18,7 @@ Atualizado em 11/06/2026.
 - `docs/motorista-api.md`
 - `docs/plano-motorista.md`
 - `docs/plano-admin-motorista.md`
+- `docs/teste-modulo-motorista.md`
 
 ## Endpoints relacionados
 

@@ -961,14 +961,14 @@ function ActionIcon({ direction }: { direction: "left" | "right" }) {
   );
 }
 
-function FormToast({ message }: { message?: string }) {
+function FormToast({ message, tone = "warning" }: { message?: string; tone?: "warning" | "success" }) {
   if (!message) {
     return null;
   }
 
   return (
-    <div aria-live="polite" className="form-toast" role="status">
-      <span aria-hidden="true">!</span>
+    <div aria-live="polite" className={`form-toast is-${tone}`} role="status">
+      <span aria-hidden="true">{tone === "success" ? "✓" : "!"}</span>
       <p>{message}</p>
     </div>
   );
@@ -1005,23 +1005,42 @@ function Login({
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const visibleError = error || initialError;
+
+  async function resolveInvalidCredentialsMessage(isEmail: boolean) {
+    try {
+      const availability = await checkDriverAccountAvailability(
+        isEmail ? { email: identifier.trim() } : { whatsapp: onlyDigits(identifier) },
+      );
+      const hasAccount = isEmail ? availability.conflicts.email : availability.conflicts.whatsapp;
+      return hasAccount ? "Senha incorreta." : isEmail ? "E-mail não encontrado." : "WhatsApp não encontrado.";
+    } catch {
+      return "E-mail ou senha inválidos.";
+    }
+  }
 
   async function handleLogin() {
     onClearInitialError?.();
     setIsSubmitting(true);
     setError("");
+    setSuccess("");
     try {
       const isEmail = identifier.includes("@");
       const session = await loginDriverAccount({
-        ...(isEmail ? { email: identifier } : { whatsapp: identifier }),
+        ...(isEmail ? { email: identifier.trim() } : { whatsapp: onlyDigits(identifier) }),
         password,
       });
       localStorage.setItem("suwave-driver-token", session.access_token);
       onAuthenticated(session.access_token);
-      go("dashboard");
+      setSuccess(`Bem-vindo, ${session.user.full_name}.`);
+      window.setTimeout(() => go("dashboard"), 650);
     } catch (err) {
+      if (err instanceof DriverApiError && err.code === "invalid_credentials") {
+        setError(await resolveInvalidCredentialsMessage(identifier.includes("@")));
+        return;
+      }
       setError(err instanceof Error ? err.message : "Não foi possível entrar.");
     } finally {
       setIsSubmitting(false);
@@ -1053,7 +1072,7 @@ function Login({
       <button className="link-button" onClick={() => go("forgot-password")} type="button">
         Esqueci minha senha
       </button>
-      <FormToast message={visibleError} />
+      <FormToast message={success || visibleError} tone={success ? "success" : "warning"} />
       <ActionButton onClick={handleLogin}>{isSubmitting ? "Entrando..." : "Entrar"}</ActionButton>
       <ActionButton onClick={() => go("signup")} secondary>
         Cadastrar como motorista

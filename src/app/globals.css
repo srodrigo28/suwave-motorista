@@ -920,6 +920,16 @@ h2 {
   width: 28px;
 }
 
+.form-toast.is-success {
+  background: #effaf2;
+  border-color: #74c783;
+}
+
+.form-toast.is-success span {
+  background: #25a64a;
+  color: #ffffff;
+}
+
 .form-toast p {
   font-size: 13px;
   font-weight: 850;

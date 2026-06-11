@@ -309,11 +309,12 @@ export type DriverTerms = {
   version: number;
 };
 
-async function parseResponse<T>(response: Response) {
+async function parseResponse<T>(response: Response, options: { authRequired?: boolean } = {}) {
+  const authRequired = options.authRequired ?? true;
   const body = (await response.json().catch(() => ({}))) as Partial<ApiEnvelope<T>> & Record<string, unknown>;
 
   if (!response.ok) {
-    if (response.status === 401 && typeof window !== "undefined") {
+    if (authRequired && response.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(DRIVER_AUTH_EXPIRED_EVENT));
       throw new DriverApiError("Sua sessão expirou. Entre novamente para continuar.", "token_expired");
     }
@@ -368,7 +369,7 @@ export async function loginDriverAccount(input: { email?: string; whatsapp?: str
     method: "POST",
   });
 
-  return parseResponse<DriverAuthSession>(response);
+  return parseResponse<DriverAuthSession>(response, { authRequired: false });
 }
 
 export async function requestDriverPasswordReset(input: { email?: string; whatsapp?: string }) {
