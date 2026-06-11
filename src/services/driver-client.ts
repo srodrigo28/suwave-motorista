@@ -200,7 +200,7 @@ export type DriverRideRequest = {
   passenger_phone?: string | null;
   requested_at: string;
   requested_seats: number;
-  status: "PROCURANDO" | "SEM_MOTORISTA" | "ACEITA" | "RECUSADA";
+  status: "PROCURANDO" | "SEM_MOTORISTA" | "ACEITA" | "RECUSADA" | "CONCLUIDA";
 };
 
 export type DriverRouteCoordinate = {
@@ -227,6 +227,60 @@ export type DriverPlannedTrip = {
   status: "ATIVA" | "CANCELADA" | "CONCLUIDA";
   created_at: string;
   updated_at: string;
+};
+
+export type DriverEarningsHistory = {
+  amount: string;
+  amount_cents: number;
+  created_at: string;
+  description: string;
+  id: string;
+  status: string;
+  title: string;
+  type: "ride" | "planned_trip";
+};
+
+export type DriverEarnings = {
+  accepted_rides: number;
+  active_trips: number;
+  available_balance: string;
+  available_balance_cents: number;
+  estimated_trip_total: string;
+  estimated_trip_total_cents: number;
+  history: DriverEarningsHistory[];
+  month_total: string;
+  month_total_cents: number;
+  today_total: string;
+  today_total_cents: number;
+};
+
+export type DriverDelivery = {
+  accepted_at?: string | null;
+  address: string;
+  delivered_at?: string | null;
+  delivery_fee: string;
+  id: string;
+  items_count: number;
+  picked_up_at?: string | null;
+  seller: string;
+  short_id: string;
+  status: "paid" | "preparing" | "on_route" | "delivered";
+  status_label: string;
+  total: string;
+};
+
+export type DriverHistoryItem = {
+  date_label: string;
+  distance_label: string;
+  id: string;
+  metrics: Array<{ label: string; value: string }>;
+  sort_at: string;
+  status: string;
+  status_label: string;
+  status_tone: "scheduled" | "completed" | "cancelled";
+  subtitle: string;
+  title: string;
+  type: "ride" | "planned_trip" | "delivery";
 };
 
 export type CreateDriverTripInput = {
@@ -563,6 +617,50 @@ export async function declineDriverRideRequest(token: string, rideRequestId: str
   return parseResponse<DriverRideRequest>(response);
 }
 
+export async function completeDriverRideRequest(token: string, rideRequestId: string) {
+  const response = await apiRequest(`/driver/ride-requests/${rideRequestId}/complete`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+  });
+
+  return parseResponse<DriverRideRequest>(response);
+}
+
+export async function listAvailableDriverDeliveries(token: string) {
+  const response = await apiRequest("/driver/deliveries/available", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return parseResponse<DriverDelivery[]>(response);
+}
+
+export async function acceptDriverDelivery(token: string, orderId: string) {
+  const response = await apiRequest(`/driver/deliveries/${orderId}/accept`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+  });
+
+  return parseResponse<DriverDelivery>(response);
+}
+
+export async function pickupDriverDelivery(token: string, orderId: string) {
+  const response = await apiRequest(`/driver/deliveries/${orderId}/pickup`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+  });
+
+  return parseResponse<DriverDelivery>(response);
+}
+
+export async function completeDriverDelivery(token: string, orderId: string) {
+  const response = await apiRequest(`/driver/deliveries/${orderId}/complete`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+  });
+
+  return parseResponse<DriverDelivery>(response);
+}
+
 export async function listDriverTrips(token: string) {
   const response = await apiRequest("/driver/trips", {
     headers: { Authorization: `Bearer ${token}` },
@@ -571,10 +669,44 @@ export async function listDriverTrips(token: string) {
   return parseResponse<DriverPlannedTrip[]>(response);
 }
 
+export async function listDriverHistory(token: string) {
+  const response = await apiRequest("/driver/history", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return parseResponse<DriverHistoryItem[]>(response);
+}
+
+export async function getDriverEarnings(token: string) {
+  const response = await apiRequest("/driver/earnings", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return parseResponse<DriverEarnings>(response);
+}
+
 export async function createDriverTrip(token: string, input: CreateDriverTripInput) {
   const response = await apiRequest("/driver/trips", {
     body: JSON.stringify(input),
     headers: authJsonHeaders(token),
+    method: "POST",
+  });
+
+  return parseResponse<DriverPlannedTrip>(response);
+}
+
+export async function completeDriverTrip(token: string, tripId: string) {
+  const response = await apiRequest(`/driver/trips/${tripId}/complete`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "POST",
+  });
+
+  return parseResponse<DriverPlannedTrip>(response);
+}
+
+export async function cancelDriverTrip(token: string, tripId: string) {
+  const response = await apiRequest(`/driver/trips/${tripId}/cancel`, {
+    headers: { Authorization: `Bearer ${token}` },
     method: "POST",
   });
 

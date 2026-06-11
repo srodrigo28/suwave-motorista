@@ -1919,6 +1919,170 @@ h2 {
   width: 18px;
 }
 
+.submitted-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 34px 18px 22px;
+  text-align: left;
+}
+
+.submitted-back {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #eef2f5;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgb(12 42 58 / 0.1);
+  color: #111827;
+  display: inline-flex;
+  height: 56px;
+  justify-content: center;
+  margin-bottom: 4px;
+  width: 56px;
+}
+
+.submitted-back svg {
+  height: 28px;
+  stroke-width: 2.4;
+  width: 28px;
+}
+
+.submitted-hero {
+  display: grid;
+  gap: 8px;
+}
+
+.submitted-copy h1 {
+  color: #111827;
+  font-size: clamp(40px, 10.8vw, 58px);
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1.06;
+  margin: 0;
+  max-width: 560px;
+}
+
+.submitted-copy p {
+  color: #404653;
+  font-size: clamp(21px, 5.4vw, 28px);
+  font-weight: 500;
+  line-height: 1.35;
+  margin: 12px 0 0;
+  max-width: 420px;
+}
+
+.submitted-car-art {
+  align-items: end;
+  display: grid;
+  justify-items: center;
+  min-height: 260px;
+  position: relative;
+}
+
+.submitted-car-image {
+  display: block;
+  height: auto;
+  margin-top: 4px;
+  object-fit: contain;
+  position: relative;
+  width: min(100%, 620px);
+}
+
+.submitted-checklist {
+  border-color: #edf1f3;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgb(12 42 58 / 0.07);
+  margin: 2px 0 8px;
+  padding: 0 18px;
+}
+
+.submitted-checklist span {
+  color: #111827;
+  font-size: clamp(15px, 3.65vw, 18px);
+  font-weight: 600;
+  gap: 12px;
+  line-height: 1.18;
+  min-height: 42px;
+  padding: 10px 0;
+}
+
+.submitted-checklist span svg {
+  background: var(--suwave-yellow);
+  color: #101828;
+  height: 24px;
+  padding: 5px;
+  stroke-width: 3.2;
+  width: 24px;
+}
+
+.submitted-analysis-card {
+  align-items: center;
+  background: linear-gradient(100deg, #fff7d7 0%, #fffdf4 100%);
+  border: 1px solid #ffebad;
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  min-height: 86px;
+  padding: 14px 18px;
+}
+
+.submitted-shield {
+  align-items: center;
+  color: var(--suwave-yellow);
+  display: inline-flex;
+  justify-content: center;
+}
+
+.submitted-shield svg {
+  height: 48px;
+  stroke-width: 2.2;
+  width: 48px;
+}
+
+.submitted-analysis-card strong {
+  color: #111827;
+  display: block;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.14;
+  margin-bottom: 3px;
+}
+
+.submitted-analysis-card p {
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.24;
+  margin: 0;
+  max-width: 260px;
+}
+
+.submitted-home-button {
+  align-items: center;
+  background: #fff;
+  border: 2px solid var(--suwave-yellow);
+  border-radius: 10px;
+  color: var(--suwave-yellow);
+  display: grid;
+  font-size: 16px;
+  font-weight: 900;
+  grid-template-columns: 40px 1fr 40px;
+  min-height: 46px;
+  padding: 0 16px;
+  width: 100%;
+}
+
+.submitted-home-button svg {
+  height: 21px;
+  justify-self: start;
+  stroke-width: 2.2;
+  width: 21px;
+}
+
+.submitted-home-button span {
+  justify-self: center;
+}
+
 .review-ring {
   align-items: center;
   aspect-ratio: 1;
@@ -2836,6 +3000,10 @@ h2 {
   grid-template-columns: 1fr 1fr;
 }
 
+.ride-actions.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .ride-actions button {
   border: 0;
   border-radius: 8px;
@@ -2857,6 +3025,11 @@ h2 {
   color: var(--suwave-black);
 }
 
+.delivery-offer-card {
+  background: #f7fbff;
+  border-color: #cfe0ec;
+}
+
 .ride-actions button:disabled {
   cursor: wait;
   opacity: 0.7;
@@ -2868,6 +3041,98 @@ h2 {
   font-weight: 800;
   margin: -4px 0 12px;
   text-align: center;
+}
+
+.trip-detail-actions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.trip-detail-actions button {
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 900;
+  min-height: 46px;
+}
+
+.trip-detail-actions button:first-child {
+  background: var(--suwave-yellow);
+  color: #073449;
+}
+
+.trip-detail-actions button:last-child {
+  background: #fff;
+  border: 1.5px solid #d9e4ea;
+  color: #244b63;
+}
+
+.trip-detail-actions button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.driver-earnings-card {
+  background: #f7fafb;
+  border: 1px solid #dce7ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 14px;
+}
+
+.driver-earnings-balance {
+  align-items: end;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.driver-earnings-balance span,
+.driver-earnings-grid small {
+  color: #667f90;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.driver-earnings-balance strong {
+  color: #071a36;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.driver-earnings-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.driver-earnings-grid span {
+  background: #fff;
+  border: 1px solid #edf2f5;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-height: 58px;
+  padding: 9px;
+}
+
+.driver-earnings-grid b {
+  color: #0b2536;
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.driver-earnings-card p {
+  color: #9b3d19;
+  font-size: 12px;
+  font-weight: 750;
+  margin: 0;
 }
 
 .driver-profile-screen {

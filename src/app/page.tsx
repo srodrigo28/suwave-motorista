@@ -10,11 +10,19 @@ import {
   createDriverTrip,
   declineDriverRideRequest,
   DriverApiError,
+  getDriverEarnings,
   getDriverProfile,
   getDriverTerms,
   loginDriverAccount,
+  acceptDriverDelivery,
+  cancelDriverTrip,
+  completeDriverDelivery,
+  completeDriverRideRequest,
+  completeDriverTrip,
+  listDriverHistory,
+  listAvailableDriverDeliveries,
+  pickupDriverDelivery,
   listDriverRideRequests,
-  listDriverTrips,
   pingDriverLocation,
   registerDriverAccount,
   requestDriverPasswordReset,
@@ -28,7 +36,9 @@ import {
   updateDriverVehicle,
   uploadDriverImage,
   DRIVER_AUTH_EXPIRED_EVENT,
-  type DriverPlannedTrip,
+  type DriverDelivery,
+  type DriverEarnings,
+  type DriverHistoryItem,
   type DriverProfile,
   type DriverRideRequest,
   type DriverTerms,
@@ -2019,30 +2029,48 @@ function Cnh({
 
 function Submitted({ go }: { go: (screen: Screen) => void }) {
   return (
-    <section className="scroll-screen center-screen">
-      <BrandLockup />
-      <Progress current={5} total={primarySteps} />
-      <div className="hero-car approved" aria-hidden="true">
-        <div className="check">✓</div>
-        <div className="town" />
-        <div className="car">
-          <span />
+    <section className="scroll-screen submitted-screen">
+      <button aria-label="Voltar" className="submitted-back" onClick={() => go("cnh")} type="button">
+        <FiArrowLeft aria-hidden="true" />
+      </button>
+
+      <div className="submitted-hero">
+        <div className="submitted-copy">
+          <h1>Cadastro enviado para análise</h1>
+          <p>Todos os dados foram recebidos com sucesso.</p>
+        </div>
+        <div className="submitted-car-art" aria-hidden="true">
+          <Image
+            alt=""
+            className="submitted-car-image"
+            height={425}
+            src="/motorista/cadastro-analise-carro.png"
+            width={638}
+          />
         </div>
       </div>
-      <h1>Cadastro enviado</h1>
-      <p className="subtitle">Agora é só aguardar a análise.</p>
-      <div className="checklist">
-        <span>✓ Dados pessoais preenchidos</span>
-        <span>✓ Foto do rosto validada</span>
-        <span>✓ CNH enviada</span>
-        <span>✓ Cadastro concluído</span>
+
+      <div className="checklist submitted-checklist">
+        <span><Icon name="check" /> Cadastro do motorista concluído</span>
+        <span><Icon name="check" /> Escolha da modalidade concluída</span>
+        <span><Icon name="check" /> CNH enviada</span>
+        <span><Icon name="check" /> Termos e Política aceitos</span>
       </div>
-      <p className="calendar-line">▣ No MVP, a aprovação é simulada em até 10 minutos.</p>
-      <ActionButton onClick={() => go("status")}>Acompanhar aprovação</ActionButton>
-      <ActionButton iconDirection="left" onClick={() => go("login")} secondary>
-        Voltar ao login
-      </ActionButton>
-      <FooterNote />
+
+      <div className="submitted-analysis-card">
+        <span aria-hidden="true" className="submitted-shield">
+          <Icon name="shield" />
+        </span>
+        <div>
+          <strong>Seu cadastro está em análise.</strong>
+          <p>Nossa equipe fará a avaliação e em breve entrará em contato.</p>
+        </div>
+      </div>
+
+      <button className="submitted-home-button" onClick={() => go("login")} type="button">
+        <Icon name="home" />
+        <span>Voltar ao início</span>
+      </button>
     </section>
   );
 }
@@ -2341,44 +2369,6 @@ function formatTripDuration(seconds?: number | null) {
   }
 
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-}
-
-function formatTripDate(value?: string | null) {
-  if (!value) {
-    return "--/--/----";
-  }
-
-  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
-}
-
-function formatTripHistoryDistance(distanceKm?: number | null) {
-  if (!distanceKm || distanceKm <= 0) {
-    return "-- km";
-  }
-
-  return `${Math.round(distanceKm).toLocaleString("pt-BR")} km`;
-}
-
-function getTripStatusLabel(status: DriverPlannedTrip["status"]) {
-  const labels: Record<DriverPlannedTrip["status"], string> = {
-    ATIVA: "Agendada",
-    CANCELADA: "Cancelada",
-    CONCLUIDA: "Concluída",
-  };
-
-  return labels[status] ?? status;
-}
-
-function getTripStatusTone(status: DriverPlannedTrip["status"]) {
-  if (status === "CONCLUIDA") {
-    return "completed";
-  }
-
-  if (status === "CANCELADA") {
-    return "cancelled";
-  }
-
-  return "scheduled";
 }
 
 function getLoadedGoogleMaps() {
@@ -3526,56 +3516,71 @@ function RegisterTrip({ go, token }: { go: (screen: Screen) => void; token?: str
 }
 
 function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: string }) {
-  const [trips, setTrips] = useState<DriverPlannedTrip[]>([]);
+  const [items, setItems] = useState<DriverHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedTrip, setSelectedTrip] = useState<DriverPlannedTrip | null>(null);
+  const [selectedItem, setSelectedItem] = useState<DriverHistoryItem | null>(null);
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const authError = token ? "" : "Entre novamente para ver seu histórico de viagens.";
 
-  useEffect(() => {
+  const loadHistory = useCallback(async () => {
     if (!token) {
       return;
     }
 
     const activeToken = token;
-    let cancelled = false;
+    setIsLoading(true);
+    setError("");
 
-    async function loadTrips() {
-      setIsLoading(true);
-      setError("");
-
-      try {
-        const data = await listDriverTrips(activeToken);
-        if (!cancelled) {
-          setTrips(data);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setTrips([]);
-          setError(err instanceof Error ? err.message : "Não foi possível carregar seu histórico de viagens agora.");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
+    try {
+      const data = await listDriverHistory(activeToken);
+      setItems(data);
+    } catch (err) {
+      setItems([]);
+      setError(err instanceof Error ? err.message : "Não foi possível carregar seu histórico de viagens agora.");
+    } finally {
+      setIsLoading(false);
     }
-
-    loadTrips();
-
-    return () => {
-      cancelled = true;
-    };
   }, [token]);
 
-  const sortedTrips = useMemo(
-    () =>
-      [...trips].sort((left, right) => {
-        const dateCompare = left.departure_date.localeCompare(right.departure_date);
-        return dateCompare || left.destination_label.localeCompare(right.destination_label, "pt-BR");
-      }),
-    [trips],
-  );
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadHistory();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadHistory]);
+
+  async function handleHistoryAction(item: DriverHistoryItem, action: "complete" | "cancel" | "pickup") {
+    if (!token) {
+      setError("Entre novamente para atualizar o histórico.");
+      return;
+    }
+
+    setBusyItemId(item.id);
+    setError("");
+    try {
+      if (item.type === "ride") {
+        await completeDriverRideRequest(token, item.id);
+      } else if (item.type === "delivery" && action === "pickup") {
+        await pickupDriverDelivery(token, item.id);
+      } else if (item.type === "delivery") {
+        await completeDriverDelivery(token, item.id);
+      } else if (action === "complete") {
+        await completeDriverTrip(token, item.id);
+      } else {
+        await cancelDriverTrip(token, item.id);
+      }
+      await loadHistory();
+      setSelectedItem(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível atualizar este item.");
+    } finally {
+      setBusyItemId(null);
+    }
+  }
+
+  const sortedItems = useMemo(() => [...items].sort((left, right) => right.sort_at.localeCompare(left.sort_at)), [items]);
 
   return (
     <section className="scroll-screen trip-history-screen">
@@ -3611,14 +3616,14 @@ function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: stri
 
         {isLoading ? <p className="trip-history-state">Carregando viagens...</p> : null}
         {!isLoading && (error || authError) ? <p className="trip-history-state error">{error || authError}</p> : null}
-        {!isLoading && !error && !authError && sortedTrips.length === 0 ? (
+        {!isLoading && !error && !authError && sortedItems.length === 0 ? (
           <p className="trip-history-state">Nenhuma viagem registrada ainda.</p>
         ) : null}
 
-        {!isLoading && !error && !authError && sortedTrips.length > 0 ? (
+        {!isLoading && !error && !authError && sortedItems.length > 0 ? (
           <div className="trip-history-list">
-            {sortedTrips.map((trip) => (
-              <TripHistoryCard key={trip.id} onSelect={setSelectedTrip} trip={trip} />
+            {sortedItems.map((item) => (
+              <TripHistoryCard key={`${item.type}-${item.id}`} item={item} onSelect={setSelectedItem} />
             ))}
           </div>
         ) : null}
@@ -3626,31 +3631,54 @@ function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: stri
 
       <p className="trip-history-tip">
         <Icon name="help" />
-        <span><strong>Dica:</strong> Toque em uma viagem para ver os detalhes completos.</span>
+        <span><strong>Dica:</strong> Toque em uma corrida ou rota para ver os detalhes completos.</span>
       </p>
 
-      {selectedTrip ? (
-        <div className="trip-detail-overlay" role="presentation" onClick={() => setSelectedTrip(null)}>
+      {selectedItem ? (
+        <div className="trip-detail-overlay" role="presentation" onClick={() => setSelectedItem(null)}>
           <aside
             aria-label="Detalhes da viagem"
             className="trip-detail-sheet"
             onClick={(event) => event.stopPropagation()}
           >
-            <button aria-label="Fechar detalhes" className="trip-detail-close" onClick={() => setSelectedTrip(null)} type="button">
+            <button aria-label="Fechar detalhes" className="trip-detail-close" onClick={() => setSelectedItem(null)} type="button">
               <Icon name="close" />
             </button>
-            <h2>{selectedTrip.destination_label}</h2>
+            <h2>{selectedItem.title}</h2>
             <div className="trip-detail-grid">
-              <TripDetailItem label="Origem" value={selectedTrip.origin_label || "Local atual"} />
-              <TripDetailItem label="Destino" value={selectedTrip.destination_label} />
-              <TripDetailItem label="Ida" value={formatTripDate(selectedTrip.departure_date)} />
-              <TripDetailItem label="Retorno" value={formatTripDate(selectedTrip.return_date)} />
-              <TripDetailItem label="Distância total" value={formatTripHistoryDistance(selectedTrip.total_distance_km)} />
-              <TripDetailItem label="Distância de ida" value={formatTripHistoryDistance(selectedTrip.outbound_distance_km)} />
-              <TripDetailItem label="Distância de retorno" value={formatTripHistoryDistance(selectedTrip.return_distance_km)} />
-              <TripDetailItem label="Duração estimada" value={formatTripDuration(selectedTrip.duration_seconds)} />
-              <TripDetailItem label="Status" value={getTripStatusLabel(selectedTrip.status)} />
+              {selectedItem.metrics.map((metric) => (
+                <TripDetailItem key={metric.label} label={metric.label} value={metric.value} />
+              ))}
             </div>
+            {selectedItem.status_tone === "scheduled" ? (
+              <div className="trip-detail-actions">
+                <button
+                  disabled={busyItemId === selectedItem.id}
+                  onClick={() =>
+                    handleHistoryAction(
+                      selectedItem,
+                      selectedItem.type === "delivery" && selectedItem.status === "preparing" ? "pickup" : "complete",
+                    )
+                  }
+                  type="button"
+                >
+                  {busyItemId === selectedItem.id
+                    ? "Atualizando..."
+                    : selectedItem.type === "delivery" && selectedItem.status === "preparing"
+                      ? "Retirar pedido"
+                      : "Concluir"}
+                </button>
+                {selectedItem.type === "planned_trip" ? (
+                  <button
+                    disabled={busyItemId === selectedItem.id}
+                    onClick={() => handleHistoryAction(selectedItem, "cancel")}
+                    type="button"
+                  >
+                    Cancelar
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </aside>
         </div>
       ) : null}
@@ -3659,30 +3687,30 @@ function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: stri
 }
 
 function TripHistoryCard({
+  item,
   onSelect,
-  trip,
 }: {
-  onSelect: (trip: DriverPlannedTrip) => void;
-  trip: DriverPlannedTrip;
+  item: DriverHistoryItem;
+  onSelect: (item: DriverHistoryItem) => void;
 }) {
-  const tone = getTripStatusTone(trip.status);
+  const tone = item.status_tone;
 
   return (
-    <button className="trip-history-card" onClick={() => onSelect(trip)} type="button">
+    <button className="trip-history-card" onClick={() => onSelect(item)} type="button">
       <span className={`trip-history-icon ${tone}`}>
-        <Icon name={tone === "completed" ? "check" : "calendar"} />
+        <Icon name={tone === "completed" ? "check" : item.type === "ride" || item.type === "delivery" ? "car" : "calendar"} />
       </span>
       <span className="trip-history-main">
-        <strong>{trip.destination_label}</strong>
-        <small>Ida: {formatTripDate(trip.departure_date)}</small>
-        <small>Retorno: {formatTripDate(trip.return_date)}</small>
+        <strong>{item.title}</strong>
+        <small>{item.subtitle}</small>
+        <small>{item.date_label}</small>
       </span>
       <span className="trip-history-metrics">
-        <em className={`trip-history-badge ${tone}`}>{getTripStatusLabel(trip.status)}</em>
+        <em className={`trip-history-badge ${tone}`}>{item.status_label}</em>
         <span>
           <Icon name="road" />
-          <b>{formatTripHistoryDistance(trip.total_distance_km)}</b>
-          <small>ida e volta</small>
+          <b>{item.distance_label}</b>
+          <small>{item.type === "ride" ? "corrida" : item.type === "delivery" ? "entrega" : "rota"}</small>
         </span>
       </span>
       <FiChevronRight aria-hidden="true" className="trip-history-chevron" />
@@ -3733,7 +3761,11 @@ function Dashboard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rideRequests, setRideRequests] = useState<DriverRideRequest[]>([]);
   const [busyRideId, setBusyRideId] = useState<string | null>(null);
+  const [deliveryOffers, setDeliveryOffers] = useState<DriverDelivery[]>([]);
+  const [busyDeliveryId, setBusyDeliveryId] = useState<string | null>(null);
   const [rideFeedback, setRideFeedback] = useState("");
+  const [earnings, setEarnings] = useState<DriverEarnings | null>(null);
+  const [earningsError, setEarningsError] = useState("");
   const [isDriverMenuOpen, setIsDriverMenuOpen] = useState(false);
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [mapLocation, setMapLocation] = useState<DriverMapLocation>(defaultDriverMapLocation);
@@ -3834,6 +3866,36 @@ function Dashboard({
   }, [mapLocation]);
 
   useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    const activeToken = token;
+    let cancelled = false;
+
+    async function loadEarnings() {
+      try {
+        const data = await getDriverEarnings(activeToken);
+        if (!cancelled) {
+          setEarnings(data);
+          setEarningsError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setEarnings(null);
+          setEarningsError(err instanceof Error ? err.message : "Não foi possível carregar seus ganhos.");
+        }
+      }
+    }
+
+    loadEarnings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadBrowserLocation() {
@@ -3864,13 +3926,17 @@ function Dashboard({
 
     async function syncRideRequests() {
       try {
-        const requests = await listDriverRideRequests(activeToken);
+        const [requests, deliveries] = await Promise.all([
+          listDriverRideRequests(activeToken),
+          listAvailableDriverDeliveries(activeToken),
+        ]);
         if (!cancelled) {
           setRideRequests(requests);
+          setDeliveryOffers(deliveries);
         }
       } catch (err) {
         if (!cancelled) {
-          setRideFeedback(err instanceof Error ? err.message : "Não foi possível buscar corridas.");
+          setRideFeedback(err instanceof Error ? err.message : "Não foi possível buscar corridas e entregas.");
         }
       }
     }
@@ -3898,6 +3964,7 @@ function Dashboard({
         setIsOnline(availability.is_online);
         setDriverProfile(availability.driver);
         setRideRequests([]);
+        setDeliveryOffers([]);
         return;
       }
 
@@ -3947,10 +4014,37 @@ function Dashboard({
           : await declineDriverRideRequest(token, rideRequestId);
       setRideRequests((requests) => requests.filter((request) => request.id !== rideRequestId));
       setRideFeedback(updated.status === "ACEITA" ? "Corrida aceita." : "Corrida recusada.");
+      if (updated.status === "ACEITA") {
+        const data = await getDriverEarnings(token);
+        setEarnings(data);
+        setEarningsError("");
+      }
     } catch (err) {
       setRideFeedback(err instanceof Error ? err.message : "Não foi possível responder a corrida.");
     } finally {
       setBusyRideId(null);
+    }
+  }
+
+  async function handleAcceptDelivery(orderId: string) {
+    if (!token) {
+      setRideFeedback("Entre novamente para aceitar a entrega.");
+      return;
+    }
+
+    setBusyDeliveryId(orderId);
+    setRideFeedback("");
+    try {
+      await acceptDriverDelivery(token, orderId);
+      setDeliveryOffers((offers) => offers.filter((offer) => offer.id !== orderId));
+      setRideFeedback("Entrega aceita. Veja os detalhes no histórico.");
+      const data = await getDriverEarnings(token);
+      setEarnings(data);
+      setEarningsError("");
+    } catch (err) {
+      setRideFeedback(err instanceof Error ? err.message : "Não foi possível aceitar a entrega.");
+    } finally {
+      setBusyDeliveryId(null);
     }
   }
 
@@ -4036,6 +4130,27 @@ function Dashboard({
           </div>
         </div>
         <FormToast message={error} />
+        <section className="driver-earnings-card" aria-label="Resumo de ganhos">
+          <div className="driver-earnings-balance">
+            <span>Saldo disponível</span>
+            <strong>{earnings?.available_balance ?? "R$ 0,00"}</strong>
+          </div>
+          <div className="driver-earnings-grid">
+            <span>
+              <small>Hoje</small>
+              <b>{earnings?.today_total ?? "R$ 0,00"}</b>
+            </span>
+            <span>
+              <small>Mês</small>
+              <b>{earnings?.month_total ?? "R$ 0,00"}</b>
+            </span>
+            <span>
+              <small>Rotas</small>
+              <b>{earnings?.estimated_trip_total ?? "R$ 0,00"}</b>
+            </span>
+          </div>
+          {earningsError ? <p>{earningsError}</p> : null}
+        </section>
         {rideRequests.length ? (
           <div className="ride-request-stack">
             {rideRequests.slice(0, 2).map((rideRequest) => (
@@ -4076,6 +4191,42 @@ function Dashboard({
                     type="button"
                   >
                     {busyRideId === rideRequest.id ? "Enviando..." : "Aceitar"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {deliveryOffers.length ? (
+          <div className="ride-request-stack">
+            {deliveryOffers.slice(0, 2).map((delivery) => (
+              <article className="ride-request-card delivery-offer-card" key={delivery.id}>
+                <div>
+                  <span>Nova entrega</span>
+                  <strong>{delivery.seller}</strong>
+                  <p>{delivery.address}</p>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Pedido</dt>
+                    <dd>{delivery.short_id}</dd>
+                  </div>
+                  <div>
+                    <dt>Itens</dt>
+                    <dd>{delivery.items_count}</dd>
+                  </div>
+                  <div>
+                    <dt>Taxa</dt>
+                    <dd>{delivery.delivery_fee}</dd>
+                  </div>
+                </dl>
+                <div className="ride-actions single">
+                  <button
+                    disabled={busyDeliveryId === delivery.id}
+                    onClick={() => handleAcceptDelivery(delivery.id)}
+                    type="button"
+                  >
+                    {busyDeliveryId === delivery.id ? "Aceitando..." : "Aceitar entrega"}
                   </button>
                 </div>
               </article>
