@@ -19,6 +19,7 @@ Atualizado em 11/06/2026.
 - `docs/plano-motorista.md`
 - `docs/plano-admin-motorista.md`
 - `docs/teste-modulo-motorista.md`
+- `docs/rastreabilidade-cadastro-motorista.md`
 
 ## Endpoints relacionados
 

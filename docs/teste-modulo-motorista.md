@@ -21,15 +21,55 @@ Legenda dos marcadores:
 - [x] concluído, validado ou aprovado;
 - [ ] pendente, precisa de correção ou precisa de reteste.
 
+## Resumo de Pendências
+
+Status geral em 11/06/2026: o módulo motorista está com as correções principais implementadas no código, o app compila sem erro e os pontos críticos de login, perfil e bucket foram retestados contra o deploy. Ainda não está 100% homologado, porque falta repetir o teste visual clicando no app e refazer o fluxo completo de cadastro/documentos.
+
+| Grupo | Total | Concluído | Pendente | Situação |
+| --- | ---: | ---: | ---: | --- |
+| Correções de login no app | 3 | 3 | 0 | [x] Implementado no código. [x] Retestado na API do deploy. [ ] Falta validação visual no app. |
+| Edição de perfil do motorista | 1 | 1 | 0 | [x] Implementado no código. [x] `PUT /driver/profile` validado com API real. [ ] Falta validação visual no app. |
+| Correção de imagens do bucket no perfil/painel do motorista | 1 | 1 | 0 | [x] Implementado no código. [x] Upload e URL do bucket validados com API real. [ ] Falta validação visual no app. |
+| Build do app motorista | 1 | 1 | 0 | [x] `npm run build` passou. |
+| Lint do app motorista | 1 | 1 | 0 | [x] `npm run lint` passou com 1 aviso antigo: `VehicleBrand` não utilizado. |
+| Retestes obrigatórios de homologação | 7 | 5 | 2 | [x] Login/API, perfil/API, bucket/API, lint e build. [ ] Cadastro/documentos e validação visual no app. |
+
+Pendências reais antes de considerar 100% concluído:
+
+- [x] retestar login com e-mail inexistente na API do deploy;
+- [x] retestar login com senha incorreta na API do deploy;
+- [x] retestar login correto e confirmar retorno com `full_name`;
+- [x] editar telefone e demais dados via `PUT /driver/profile` e confirmar em `GET /driver/me`;
+- [x] validar upload real de imagem no bucket e confirmar URL pública com HTTP 200;
+- [ ] validar visualmente no app a mensagem `Bem-vindo, {nome}.`;
+- [ ] clicar no nome do motorista no app, editar telefone e demais dados, salvar e recarregar o perfil;
+- [ ] validar visualmente foto do rosto e fotos do veículo vindas do bucket;
+- [ ] repetir o fluxo de cadastro/documentos/CNH até `Cadastro enviado para análise`;
+- [ ] validar painel do motorista depois das alterações.
+
+Correções aplicadas nesta etapa:
+
+- [x] login deixou de tratar `401` como sessão expirada na tela de login;
+- [x] login agora diferencia `E-mail não encontrado.` e `Senha incorreta.` no app;
+- [x] login correto agora mostra `Bem-vindo, {nome}.`;
+- [x] tela de perfil permite editar nome, e-mail, telefone, CPF, CNPJ, nascimento, sexo e Pix;
+- [x] URLs relativas de bucket agora são normalizadas antes de carregar imagens no perfil e nos veículos;
+- [x] API de deploy confirmou disponibilidade de e-mail inexistente com `available=true`;
+- [x] API de deploy confirmou e-mail existente com `conflicts.email=true`;
+- [x] API de deploy confirmou edição de perfil com telefone `66991234567`;
+- [x] bucket devolveu URL pública e a imagem respondeu HTTP 200;
+- [x] `npm run lint` executado no app motorista;
+- [x] `npm run build` executado no app motorista.
+
 ## Resultado executivo
 
 | Área | Status | Observação |
 | --- | --- | --- |
 | API de termos | [x] OK | `GET /driver/terms` retornou 200. |
 | Cadastro base | [x] OK | `POST /auth/register` retornou 201. |
-| Login com senha correta | [ ] OK API / Ajuste no app | A API retorna 200 e usuário com `full_name`; o app ainda precisa mostrar `Bem-vindo, {nome}`. |
-| Login com senha incorreta | [ ] Corrigir mensagem | A API retorna `E-mail ou senha inválidos.`, mas o requisito pede mensagem de senha incorreta. |
-| Login com e-mail inexistente | [ ] Corrigir mensagem | A API retorna `E-mail ou senha inválidos.`, mas o requisito pede mensagem de e-mail não encontrado. |
+| Login com senha correta | [x] Corrigido no app / [x] API validada / [ ] Validar visual | A API retorna 200 e usuário com `full_name`; o app agora mostra `Bem-vindo, {nome}`. |
+| Login com senha incorreta | [x] Corrigido no app / [x] API validada / [ ] Validar visual | A API retorna erro genérico, mas o app agora consulta disponibilidade e exibe `Senha incorreta.` quando o usuário existe. |
+| Login com e-mail inexistente | [x] Corrigido no app / [x] API validada / [ ] Validar visual | A API retorna erro genérico, mas o app agora consulta disponibilidade e exibe `E-mail não encontrado.` quando o e-mail não existe. |
 | Recuperação com e-mail inexistente | [x] OK | `POST /auth/password/forgot` retorna `E-mail ou WhatsApp não encontrado.` |
 | Perfil motorista | [x] OK | `POST /driver/profile` retornou 200 quando `gender` foi enviado. |
 | Envio para análise sem documentos | [x] OK | A API bloqueia e informa pendências: `face_photo`, `cnh_front`, `cnh_back`. |
@@ -47,11 +87,13 @@ Esta é a ordem recomendada para iniciar as correções do módulo motorista.
 
 | Ordem | Item | Ação necessária | Critério de aceite | Status |
 | ---: | --- | --- | --- | --- |
-| 1 | Login com e-mail inexistente | Ajustar o app ou a API para exibir mensagem específica quando o identificador não existir. | Ao tentar login com e-mail inexistente, a tela deve mostrar `E-mail não encontrado.` | [ ] PENDENTE DE CORREÇÃO |
-| 2 | Login com senha incorreta | Ajustar o app ou a API para exibir mensagem específica quando a senha estiver errada para um usuário existente. | Ao tentar login com senha incorreta, a tela deve mostrar `Senha incorreta.` | [ ] PENDENTE DE CORREÇÃO |
-| 3 | Login correto | Exibir mensagem de boas-vindas usando `session.user.full_name` antes ou logo após navegar para o painel. | Ao logar com sucesso, a tela deve mostrar `Bem-vindo, {nome}.` | [ ] PENDENTE DE CORREÇÃO |
+| 1 | Login com e-mail inexistente | Ajustar o app ou a API para exibir mensagem específica quando o identificador não existir. | Ao tentar login com e-mail inexistente, a tela deve mostrar `E-mail não encontrado.` | [x] CORRIGIDO NO APP / [x] API VALIDADA / [ ] VALIDAR VISUAL |
+| 2 | Login com senha incorreta | Ajustar o app ou a API para exibir mensagem específica quando a senha estiver errada para um usuário existente. | Ao tentar login com senha incorreta, a tela deve mostrar `Senha incorreta.` | [x] CORRIGIDO NO APP / [x] API VALIDADA / [ ] VALIDAR VISUAL |
+| 3 | Login correto | Exibir mensagem de boas-vindas usando `session.user.full_name` antes ou logo após navegar para o painel. | Ao logar com sucesso, a tela deve mostrar `Bem-vindo, {nome}.` | [x] CORRIGIDO NO APP / [x] API VALIDADA / [ ] VALIDAR VISUAL |
 | 4 | Validação visual do fluxo | Repetir os testes de login, cadastro, termos, foto, CNH e tela de análise. | Todas as mensagens devem aparecer em português correto e sem quebra visual. | [ ] PENDENTE DE RETESTE |
 | 5 | Regressão da API | Reexecutar os endpoints documentados neste arquivo. | As rotas que estavam OK devem continuar retornando os mesmos status esperados. | [ ] PENDENTE DE RETESTE |
+| 6 | Edição do perfil | Permitir editar dados pessoais ao clicar no nome ou nas linhas do perfil. | Motorista consegue alterar telefone e demais dados, salvar e ver o perfil atualizado. | [x] CORRIGIDO NO APP / [x] API VALIDADA / [ ] VALIDAR VISUAL |
+| 7 | Imagens do bucket | Normalizar URLs do bucket antes de exibir imagens no perfil e veículos. | Foto do rosto e fotos do veículo carregam no painel/perfil do motorista. | [x] CORRIGIDO NO APP / [x] BUCKET VALIDADO / [ ] VALIDAR VISUAL |
 
 ### Orientação técnica para os itens 1 e 2
 
@@ -111,7 +153,7 @@ Mensagem esperada no app conforme requisito:
 E-mail não encontrado.
 ```
 
-Status: [ ] `CORRIGIR`.
+Status: [x] `CORRIGIDO NO APP` / [ ] `RETESTAR EM DEPLOY`.
 
 Observação técnica: se a decisão de segurança for manter erro genérico no backend, corrigir pelo menos a mensagem do app conforme a regra do produto. Caso contrário, alterar o backend para retornar código distinto quando o e-mail ou WhatsApp não existir.
 
@@ -149,7 +191,7 @@ Mensagem esperada no app conforme requisito:
 Senha incorreta.
 ```
 
-Status: [ ] `CORRIGIR`.
+Status: [x] `CORRIGIDO NO APP` / [ ] `RETESTAR EM DEPLOY`.
 
 ### ERRO 3 - Login correto não mostra mensagem de boas-vindas com nome
 
@@ -193,7 +235,7 @@ Mensagem esperada no app:
 Bem-vindo, QA Motorista Deploy.
 ```
 
-Status: [ ] `CORRIGIR`.
+Status: [x] `CORRIGIDO NO APP` / [ ] `RETESTAR EM DEPLOY`.
 
 Sugestão de correção: ao receber `session.user.full_name`, exibir toast ou estado de sucesso antes ou depois de navegar para `dashboard`.
 
@@ -222,9 +264,9 @@ Testes:
 | Caso | Ação | API | Esperado | Status |
 | --- | --- | --- | --- | --- |
 | E-mail vazio | Clicar em Entrar sem dados | Não chama API | Mostrar validação local ou erro amigável. | [ ] A verificar no app |
-| E-mail inexistente | Informar e-mail que não existe | `POST /auth/login` | `E-mail não encontrado.` | [ ] CORRIGIR |
-| Senha incorreta | Informar e-mail existente e senha errada | `POST /auth/login` | `Senha incorreta.` | [ ] CORRIGIR |
-| Login correto | Informar e-mail e senha corretos | `POST /auth/login` | `Bem-vindo, {nome}` e abrir painel. | [ ] CORRIGIR mensagem |
+| E-mail inexistente | Informar e-mail que não existe | `POST /auth/login` | `E-mail não encontrado.` | [x] Corrigido no app / [ ] retestar |
+| Senha incorreta | Informar e-mail existente e senha errada | `POST /auth/login` | `Senha incorreta.` | [x] Corrigido no app / [ ] retestar |
+| Login correto | Informar e-mail e senha corretos | `POST /auth/login` | `Bem-vindo, {nome}` e abrir painel. | [x] Corrigido no app / [ ] retestar |
 
 ### 2. Esqueci minha senha
 
@@ -572,6 +614,27 @@ Status: [x] OK para consultas. [ ] Ações de aceitar, recusar e concluir depend
 
 ## Evidências da API real
 
+### Reteste em 11/06/2026 após correções
+
+Conta QA usada:
+
+```text
+qa.codex.motorista.20260611204133@suwave.local
+```
+
+| Teste | Resultado | Status |
+| --- | --- | --- |
+| Disponibilidade de e-mail inexistente | `200`, `available=true`, `conflicts.email=false` | [x] OK |
+| Registro de conta QA nova | `201`, `Usuário cadastrado com sucesso.` | [x] OK |
+| Login com senha incorreta | `401`, `invalid_credentials` | [x] OK para API; app converte para `Senha incorreta.` usando disponibilidade |
+| Disponibilidade de e-mail existente | `200`, `available=false`, `conflicts.email=true` | [x] OK |
+| Login correto | `200`, `Login realizado com sucesso.`, retorno com `full_name` | [x] OK |
+| Edição de perfil | `PUT /driver/profile -> 200`, telefone salvo como `66991234567` | [x] OK |
+| Conferência do perfil editado | `GET /driver/me -> 200`, nome e telefone atualizados | [x] OK |
+| Upload real no bucket | `POST /uploads/images -> 200`, URL pública retornada | [x] OK |
+| Vincular foto do rosto | `POST /driver/photo/face -> 200` | [x] OK |
+| Acesso à URL pública do bucket | `HTTP 200` | [x] OK |
+
 ### Autenticação
 
 | Teste | Status HTTP | Código | Mensagem |
@@ -668,10 +731,10 @@ Status: [x] OK para consultas. [ ] Ações de aceitar, recusar e concluir depend
 
 ## Próxima ação recomendada
 
-Iniciar a correção pelos itens de login:
+Repetir este documento como checklist de regressão em deploy.
 
-- [ ] exibir `E-mail não encontrado.` quando o identificador não existir;
-- [ ] exibir `Senha incorreta.` quando a senha estiver errada para usuário existente;
-- [ ] exibir `Bem-vindo, {nome}` quando `POST /auth/login` retornar 200.
-
-Depois, repetir este documento como checklist de regressão.
+- [ ] confirmar `E-mail não encontrado.` quando o identificador não existir;
+- [ ] confirmar `Senha incorreta.` quando a senha estiver errada para usuário existente;
+- [ ] confirmar `Bem-vindo, {nome}` quando `POST /auth/login` retornar 200;
+- [ ] confirmar edição de telefone e demais dados no perfil;
+- [ ] confirmar carregamento de fotos reais do bucket no perfil e veículos.

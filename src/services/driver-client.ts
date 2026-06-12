@@ -110,15 +110,71 @@ export type DriverAuthSession = {
   };
 };
 
+type ConflictDetail = { exists: boolean; same_account: boolean };
+
 export type AccountAvailability = {
   available: boolean;
-  conflicts: Partial<Record<"email" | "cpf" | "whatsapp", boolean>>;
+  conflicts: Partial<Record<"email" | "cpf" | "whatsapp", ConflictDetail>>;
 };
 
 export type UploadResult = {
   storage_file_id?: number | string | null;
   url: string;
 };
+
+export const DRIVER_UPLOAD_TRACE_STORAGE_KEY = "suwave-driver-upload-trace";
+
+type DriverUploadContext = "driver_face" | "driver_cnh" | "driver_vehicle";
+
+type DriverUploadTraceEvent = {
+  action: string;
+  context?: DriverUploadContext;
+  file?: {
+    name: string;
+    size: number;
+    type: string;
+  };
+  linked_endpoint?: string;
+  payload?: Record<string, unknown>;
+  storage_file_id?: number | string | null;
+  trace_id: string;
+  url?: string | null;
+  when: string;
+};
+
+function createDriverTraceId(context?: string) {
+  const randomPart = Math.random().toString(36).slice(2, 8);
+  return `driver-${context ?? "trace"}-${Date.now()}-${randomPart}`;
+}
+
+function recordDriverUploadTrace(event: Omit<DriverUploadTraceEvent, "trace_id" | "when"> & { trace_id?: string }) {
+  const traceEvent: DriverUploadTraceEvent = {
+    ...event,
+    trace_id: event.trace_id ?? createDriverTraceId(event.context),
+    when: new Date().toISOString(),
+  };
+
+  if (typeof window !== "undefined") {
+    try {
+      const previous = JSON.parse(window.localStorage.getItem(DRIVER_UPLOAD_TRACE_STORAGE_KEY) || "[]") as DriverUploadTraceEvent[];
+      window.localStorage.setItem(DRIVER_UPLOAD_TRACE_STORAGE_KEY, JSON.stringify([traceEvent, ...previous].slice(0, 80)));
+    } catch {
+      window.localStorage.setItem(DRIVER_UPLOAD_TRACE_STORAGE_KEY, JSON.stringify([traceEvent]));
+    }
+  }
+
+  // Mantem a rastreabilidade visivel durante testes manuais sem expor tokens.
+  console.info("[SUWAVE motorista upload]", traceEvent);
+
+  return traceEvent.trace_id;
+}
+
+function uploadTracePayload(upload: UploadResult) {
+  return {
+    storage_file_id: upload.storage_file_id ?? null,
+    url: upload.url,
+  };
+}
 
 export type DriverReviewStatus = {
   approved: boolean;
@@ -307,6 +363,18 @@ export type DriverTerms = {
   version: number;
 };
 
+export type DriverNotification = {
+  action_label?: string | null;
+  action_url?: string | null;
+  body: string;
+  created_at: string;
+  id: string;
+  read: boolean;
+  title: string;
+  tone: "danger" | "info" | "success" | "warning" | string;
+  user_id?: string;
+};
+
 async function parseResponse<T>(response: Response, options: { authRequired?: boolean } = {}) {
   const authRequired = options.authRequired ?? true;
   const body = (await response.json().catch(() => ({}))) as Partial<ApiEnvelope<T>> & Record<string, unknown>;
@@ -368,6 +436,16 @@ export async function loginDriverAccount(input: { email?: string; whatsapp?: str
   });
 
   return parseResponse<DriverAuthSession>(response, { authRequired: false });
+}
+
+export async function linkDriverRole(token: string) {
+  const response = await apiRequest("/auth/link-role", {
+    body: JSON.stringify({ role: "driver" }),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  return parseResponse<DriverAuthSession>(response);
 }
 
 export async function requestDriverPasswordReset(input: { email?: string; whatsapp?: string }) {
@@ -439,7 +517,16 @@ export async function updateDriverProfile(
   return parseResponse(response);
 }
 
-export async function uploadDriverImage(token: string, file: File, context: "driver_face" | "driver_cnh" | "driver_vehicle") {
+export async function uploadDriverImage(token: string, file: File, context: DriverUploadContext) {
+  const traceId = recordDriverUploadTrace({
+    action: "upload_started",
+    context,
+    file: {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    },
+  });
   const formData = new FormData();
   formData.append("context", context);
   formData.append("file", file);
@@ -450,7 +537,22 @@ export async function uploadDriverImage(token: string, file: File, context: "dri
     method: "POST",
   });
 
-  return parseResponse<UploadResult>(response);
+  const upload = await parseResponse<UploadResult>(response);
+  recordDriverUploadTrace({
+    action: "upload_completed",
+    context,
+    file: {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+    },
+    payload: uploadTracePayload(upload),
+    storage_file_id: upload.storage_file_id ?? null,
+    trace_id: traceId,
+    url: upload.url,
+  });
+
+  return upload;
 }
 
 export async function saveDriverFacePhoto(token: string, upload: UploadResult) {
@@ -460,7 +562,17 @@ export async function saveDriverFacePhoto(token: string, upload: UploadResult) {
     method: "POST",
   });
 
-  return parseResponse(response);
+  const result = await parseResponse(response);
+  recordDriverUploadTrace({
+    action: "image_linked_to_driver_face",
+    context: "driver_face",
+    linked_endpoint: "/driver/photo/face",
+    payload: uploadTracePayload(upload),
+    storage_file_id: upload.storage_file_id ?? null,
+    url: upload.url,
+  });
+
+  return result;
 }
 
 export async function saveDriverCnh(
@@ -482,7 +594,31 @@ export async function saveDriverCnh(
     method: "POST",
   });
 
-  return parseResponse(response);
+  const result = await parseResponse(response);
+  recordDriverUploadTrace({
+    action: "image_linked_to_driver_cnh_front",
+    context: "driver_cnh",
+    linked_endpoint: "/driver/documents/cnh",
+    payload: {
+      storage_file_id: input.cnh_front_file_id ?? null,
+      url: input.cnh_front_url,
+    },
+    storage_file_id: input.cnh_front_file_id ?? null,
+    url: input.cnh_front_url,
+  });
+  recordDriverUploadTrace({
+    action: "image_linked_to_driver_cnh_back",
+    context: "driver_cnh",
+    linked_endpoint: "/driver/documents/cnh",
+    payload: {
+      storage_file_id: input.cnh_back_file_id ?? null,
+      url: input.cnh_back_url,
+    },
+    storage_file_id: input.cnh_back_file_id ?? null,
+    url: input.cnh_back_url,
+  });
+
+  return result;
 }
 
 export async function submitDriverReview(token: string) {
@@ -525,7 +661,20 @@ export async function saveDriverVehicle(
     method: "POST",
   });
 
-  return parseResponse(response);
+  const result = await parseResponse(response);
+  recordDriverUploadTrace({
+    action: "images_linked_to_driver_vehicle",
+    context: "driver_vehicle",
+    linked_endpoint: "/driver/vehicle",
+    payload: {
+      front: { storage_file_id: input.front_photo_file_id ?? null, url: input.front_photo_url ?? null },
+      interior: { storage_file_id: input.interior_photo_file_id ?? null, url: input.interior_photo_url ?? null },
+      rear: { storage_file_id: input.rear_photo_file_id ?? null, url: input.rear_photo_url ?? null },
+      side: { storage_file_id: input.side_photo_file_id ?? null, url: input.side_photo_url ?? null },
+    },
+  });
+
+  return result;
 }
 
 export async function updateDriverVehicle(
@@ -552,7 +701,20 @@ export async function updateDriverVehicle(
     method: "PUT",
   });
 
-  return parseResponse(response);
+  const result = await parseResponse(response);
+  recordDriverUploadTrace({
+    action: "images_updated_on_driver_vehicle",
+    context: "driver_vehicle",
+    linked_endpoint: `/driver/vehicle/${vehicleId}`,
+    payload: {
+      front: { storage_file_id: input.front_photo_file_id ?? null, url: input.front_photo_url ?? null },
+      interior: { storage_file_id: input.interior_photo_file_id ?? null, url: input.interior_photo_url ?? null },
+      rear: { storage_file_id: input.rear_photo_file_id ?? null, url: input.rear_photo_url ?? null },
+      side: { storage_file_id: input.side_photo_file_id ?? null, url: input.side_photo_url ?? null },
+    },
+  });
+
+  return result;
 }
 
 export async function pingDriverLocation(
@@ -682,6 +844,14 @@ export async function getDriverEarnings(token: string) {
   });
 
   return parseResponse<DriverEarnings>(response);
+}
+
+export async function listDriverNotifications(token: string) {
+  const response = await apiRequest("/notifications", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  return parseResponse<DriverNotification[]>(response);
 }
 
 export async function createDriverTrip(token: string, input: CreateDriverTripInput) {

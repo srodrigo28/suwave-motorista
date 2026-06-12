@@ -10,6 +10,7 @@ import {
   createDriverTrip,
   declineDriverRideRequest,
   DriverApiError,
+  linkDriverRole,
   getDriverEarnings,
   getDriverProfile,
   getDriverTerms,
@@ -21,6 +22,7 @@ import {
   completeDriverTrip,
   listDriverHistory,
   listAvailableDriverDeliveries,
+  listDriverNotifications,
   pickupDriverDelivery,
   listDriverRideRequests,
   pingDriverLocation,
@@ -33,6 +35,7 @@ import {
   setDriverOffline,
   setDriverOnline,
   submitDriverReview,
+  updateDriverProfile,
   updateDriverVehicle,
   uploadDriverImage,
   DRIVER_AUTH_EXPIRED_EVENT,
@@ -40,6 +43,7 @@ import {
   type DriverEarnings,
   type DriverEarningsHistory,
   type DriverHistoryItem,
+  type DriverNotification,
   type DriverProfile,
   type DriverRideRequest,
   type DriverTerms,
@@ -66,6 +70,8 @@ type Screen =
   | "dashboard"
   | "profile"
   | "finance"
+  | "reviews"
+  | "notifications"
   | "register-trip"
   | "trip-history"
   | "vehicle-list"
@@ -980,10 +986,12 @@ function FooterNote() {
   return null;
 }
 
-function driverAvailabilityMessage(conflicts: Partial<Record<"email" | "cpf" | "whatsapp", boolean>>) {
+type ConflictDetail = { exists: boolean; same_account: boolean };
+
+function driverAvailabilityMessage(conflicts: Partial<Record<"email" | "cpf" | "whatsapp", ConflictDetail>>) {
   const blockedFields = [
-    conflicts.cpf ? "CPF" : "",
-    conflicts.whatsapp ? "WhatsApp" : "",
+    conflicts.cpf?.exists && !conflicts.cpf.same_account ? "CPF" : "",
+    conflicts.whatsapp?.exists && !conflicts.whatsapp.same_account ? "WhatsApp" : "",
   ].filter(Boolean);
 
   if (blockedFields.length > 0) {
@@ -1016,7 +1024,8 @@ function Login({
       const availability = await checkDriverAccountAvailability(
         isEmail ? { email: identifier.trim() } : { whatsapp: onlyDigits(identifier) },
       );
-      const hasAccount = isEmail ? availability.conflicts.email : availability.conflicts.whatsapp;
+      const detail = isEmail ? availability.conflicts.email : availability.conflicts.whatsapp;
+      const hasAccount = detail?.exists ?? false;
       return hasAccount ? "Senha incorreta." : isEmail ? "E-mail não encontrado." : "WhatsApp não encontrado.";
     } catch {
       return "E-mail ou senha inválidos.";
@@ -1330,7 +1339,9 @@ function Signup({
     const availability = await checkDriverAccountAvailability(input);
     const message = driverAvailabilityMessage(availability.conflicts);
 
-    if (availability.conflicts.cpf || availability.conflicts.whatsapp) {
+    const cpfBlocked = availability.conflicts.cpf?.exists && !availability.conflicts.cpf.same_account;
+    const waBlocked = availability.conflicts.whatsapp?.exists && !availability.conflicts.whatsapp.same_account;
+    if (cpfBlocked || waBlocked) {
       throw new Error(message);
     }
 
@@ -1899,6 +1910,23 @@ function Cnh({
   const [error, setError] = useState("");
   const [submitStep, setSubmitStep] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const cnhPreviewUrls = useMemo(
+    () => ({
+      back: cnhBack && cnhBack.type.startsWith("image/") ? URL.createObjectURL(cnhBack) : undefined,
+      front: cnhFront && cnhFront.type.startsWith("image/") ? URL.createObjectURL(cnhFront) : undefined,
+    }),
+    [cnhBack, cnhFront],
+  );
+
+  useEffect(() => {
+    return () => {
+      Object.values(cnhPreviewUrls).forEach((previewUrl) => {
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+        }
+      });
+    };
+  }, [cnhPreviewUrls]);
 
   function handleUpload(file: File | undefined, side: "front" | "back") {
     if (!file) {
@@ -1958,6 +1986,7 @@ function Cnh({
             email,
             password: signupForm.password,
           });
+          await linkDriverRole(session.access_token);
         } catch (loginErr) {
           if (loginErr instanceof DriverApiError && loginErr.code === "invalid_credentials") {
             throw new Error("Este e-mail já existe em outro app SUWAVE. Para juntar as contas, informe a senha dessa conta ou recupere a senha.");
@@ -2018,10 +2047,17 @@ function Cnh({
       <p className="subtitle">Envie imagens nitidas do documento</p>
       <div className="upload-card">
         <strong>Frente da CNH</strong>
-        <div className="doc-preview cnh-front">
-          <i />
-          <b />
-          <span />
+        <div className={cnhPreviewUrls.front ? "doc-preview cnh-front has-document-preview" : "doc-preview cnh-front"}>
+          {cnhPreviewUrls.front ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="Prévia da frente da CNH" src={cnhPreviewUrls.front} />
+          ) : (
+            <>
+              <i />
+              <b />
+              <span />
+            </>
+          )}
         </div>
         <span>{cnhFront ? "✓ Selecionado" : "Pendente"}</span>
         <input
@@ -2038,9 +2074,16 @@ function Cnh({
       </div>
       <div className="upload-card">
         <strong>Verso da CNH</strong>
-        <div className="doc-preview cnh-back">
-          <i />
-          <b />
+        <div className={cnhPreviewUrls.back ? "doc-preview cnh-back has-document-preview" : "doc-preview cnh-back"}>
+          {cnhPreviewUrls.back ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="Prévia do verso da CNH" src={cnhPreviewUrls.back} />
+          ) : (
+            <>
+              <i />
+              <b />
+            </>
+          )}
         </div>
         <span>{cnhBack ? "✓ Selecionado" : "Pendente"}</span>
         <input
@@ -2693,8 +2736,44 @@ function formatDriverPhone(value?: string | null) {
   return value || "Não informado";
 }
 
+function getPublicApiBaseUrl() {
+  const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "https://99dev.pro/suwave-api").replace(/\/$/, "");
+  return baseUrl.endsWith("/api/v1") ? baseUrl.slice(0, -"/api/v1".length) : baseUrl;
+}
+
+function resolveBucketUrl(value?: string | null) {
+  const url = value?.trim();
+
+  if (!url) {
+    return "";
+  }
+
+  if (/^(https?:|blob:|data:)/i.test(url)) {
+    return url;
+  }
+
+  if (url.startsWith("/suwave-api/")) {
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://99dev.pro";
+    return `${origin}${url}`;
+  }
+
+  if (url.startsWith("/")) {
+    return `${getPublicApiBaseUrl()}${url}`;
+  }
+
+  return `${getPublicApiBaseUrl()}/${url}`;
+}
+
+function formatDateInput(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return value.slice(0, 10);
+}
+
 function getVehicleImageUrl(vehicle?: DriverProfile["vehicles"][number]) {
-  return vehicle?.front_photo_url || vehicle?.side_photo_url || vehicle?.rear_photo_url || vehicle?.interior_photo_url || "";
+  return resolveBucketUrl(vehicle?.front_photo_url || vehicle?.side_photo_url || vehicle?.rear_photo_url || vehicle?.interior_photo_url);
 }
 
 function getVehicleFallbackImage(vehicle?: DriverProfile["vehicles"][number]) {
@@ -2712,7 +2791,7 @@ function getVehicleFallbackImage(vehicle?: DriverProfile["vehicles"][number]) {
 }
 
 function getDriverFacePhotoUrl(profile?: DriverProfile | null) {
-  return profile?.documents?.face_photo_url || profile?.face_photo_url || "";
+  return resolveBucketUrl(profile?.documents?.face_photo_url || profile?.face_photo_url);
 }
 
 function getVehicleStatusLabel(status?: string | null) {
@@ -2744,9 +2823,9 @@ function formatVehicleYear(value?: string | number | null) {
   return String(value);
 }
 
-function ProfileRow({ detail, icon, label }: { detail: string; icon: string; label: string }) {
+function ProfileRow({ detail, icon, label, onClick }: { detail: string; icon: string; label: string; onClick?: () => void }) {
   return (
-    <button className="profile-row" type="button">
+    <button className="profile-row" onClick={onClick} type="button">
       <span className={`profile-row-icon ${icon}`}>
         <Icon name={icon} />
       </span>
@@ -2770,9 +2849,37 @@ function DriverProfileScreen({
 }) {
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    birth_date: "",
+    cnpj: "",
+    cpf: "",
+    email: "",
+    full_name: "",
+    gender: "",
+    phone: "",
+    pix_account: "",
+    pix_key_type: "",
+  });
   const vehicle = profile?.vehicles[0];
   const vehicleImageUrl = getVehicleImageUrl(vehicle);
   const facePhotoUrl = getDriverFacePhotoUrl(profile);
+
+  function fillProfileForm(nextProfile: DriverProfile) {
+    setProfileForm({
+      birth_date: formatDateInput(nextProfile.birth_date),
+      cnpj: nextProfile.cnpj ?? "",
+      cpf: nextProfile.cpf ?? "",
+      email: nextProfile.email ?? "",
+      full_name: nextProfile.full_name ?? "",
+      gender: nextProfile.gender ?? "",
+      phone: nextProfile.phone ?? "",
+      pix_account: nextProfile.pix_account ?? "",
+      pix_key_type: nextProfile.pix_key_type ?? "",
+    });
+  }
 
   function handleRefreshProfile() {
     if (!token) {
@@ -2780,8 +2887,60 @@ function DriverProfileScreen({
     }
 
     void getDriverProfile(token)
-      .then(setProfile)
+      .then((nextProfile) => {
+        setProfile(nextProfile);
+        fillProfileForm(nextProfile);
+        setSuccess("Dados atualizados.");
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Não foi possível atualizar seus dados."));
+  }
+
+  async function handleSaveProfile() {
+    if (!token) {
+      return;
+    }
+
+    if (!profileForm.full_name.trim()) {
+      setError("Informe seu nome completo.");
+      return;
+    }
+
+    if (!profileForm.email.trim()) {
+      setError("Informe seu e-mail.");
+      return;
+    }
+
+    if (!profileForm.gender.trim()) {
+      setError("Selecione seu sexo.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await updateDriverProfile(token, {
+        birth_date: profileForm.birth_date || undefined,
+        cnpj: onlyDigits(profileForm.cnpj) || undefined,
+        cpf: onlyDigits(profileForm.cpf) || undefined,
+        email: profileForm.email.trim(),
+        full_name: profileForm.full_name.trim(),
+        gender: profileForm.gender,
+        phone: onlyDigits(profileForm.phone) || undefined,
+        pix_account: profileForm.pix_account.trim() || undefined,
+        pix_key_type: profileForm.pix_key_type || undefined,
+      });
+      const nextProfile = await getDriverProfile(token);
+      setProfile(nextProfile);
+      fillProfileForm(nextProfile);
+      setIsEditingProfile(false);
+      setSuccess("Perfil atualizado com sucesso.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível salvar seus dados.");
+    } finally {
+      setIsSavingProfile(false);
+    }
   }
 
   useEffect(() => {
@@ -2796,6 +2955,7 @@ function DriverProfileScreen({
         const nextProfile = await getDriverProfile(token as string);
         if (!cancelled) {
           setProfile(nextProfile);
+          fillProfileForm(nextProfile);
         }
       } catch (err) {
         if (!cancelled) {
@@ -2818,7 +2978,7 @@ function DriverProfileScreen({
           <FiArrowLeft aria-hidden="true" />
         </button>
         <h1>Perfil do motorista</h1>
-        <button aria-label="Editar perfil" type="button">
+        <button aria-label="Editar perfil" onClick={() => setIsEditingProfile((current) => !current)} type="button">
           <FiEdit3 aria-hidden="true" />
         </button>
       </header>
@@ -2837,10 +2997,10 @@ function DriverProfileScreen({
         </span>
       </div>
 
-      <div className="profile-name">
+      <button className="profile-name" onClick={() => setIsEditingProfile(true)} type="button">
         <h2>{profile?.full_name || "Motorista SUWAVE"} <FiCheckCircle aria-hidden="true" /></h2>
         <p>Motorista parceiro</p>
-      </div>
+      </button>
 
       <button className="profile-alert" type="button">
         <span aria-hidden="true">i</span>
@@ -2848,6 +3008,101 @@ function DriverProfileScreen({
         <small>Informações atualizadas garantem mais segurança e melhor experiência.</small>
         <FiChevronRight aria-hidden="true" className="profile-chevron" />
       </button>
+
+      {isEditingProfile ? (
+        <div className="profile-edit-card">
+          <div className="profile-edit-grid">
+            <label>
+              <span>Nome completo</span>
+              <input
+                onChange={(event) => setProfileForm((current) => ({ ...current, full_name: event.target.value }))}
+                value={profileForm.full_name}
+              />
+            </label>
+            <label>
+              <span>E-mail</span>
+              <input
+                inputMode="email"
+                onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))}
+                value={profileForm.email}
+              />
+            </label>
+            <label>
+              <span>Telefone / WhatsApp</span>
+              <input
+                inputMode="tel"
+                onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))}
+                value={profileForm.phone}
+              />
+            </label>
+            <label>
+              <span>Data de nascimento</span>
+              <input
+                onChange={(event) => setProfileForm((current) => ({ ...current, birth_date: event.target.value }))}
+                type="date"
+                value={profileForm.birth_date}
+              />
+            </label>
+            <label>
+              <span>CPF</span>
+              <input
+                inputMode="numeric"
+                onChange={(event) => setProfileForm((current) => ({ ...current, cpf: event.target.value }))}
+                value={profileForm.cpf}
+              />
+            </label>
+            <label>
+              <span>CNPJ</span>
+              <input
+                inputMode="numeric"
+                onChange={(event) => setProfileForm((current) => ({ ...current, cnpj: event.target.value }))}
+                value={profileForm.cnpj}
+              />
+            </label>
+            <label>
+              <span>Sexo</span>
+              <select
+                onChange={(event) => setProfileForm((current) => ({ ...current, gender: event.target.value }))}
+                value={profileForm.gender}
+              >
+                <option value="">Selecione</option>
+                <option value="masculino">Masculino</option>
+                <option value="feminino">Feminino</option>
+                <option value="outro">Outro</option>
+              </select>
+            </label>
+            <label>
+              <span>Tipo de chave Pix</span>
+              <select
+                onChange={(event) => setProfileForm((current) => ({ ...current, pix_key_type: event.target.value }))}
+                value={profileForm.pix_key_type}
+              >
+                <option value="">Selecione</option>
+                <option value="cpf">CPF</option>
+                <option value="cnpj">CNPJ</option>
+                <option value="email">E-mail</option>
+                <option value="phone">Telefone</option>
+                <option value="random">Chave aleatória</option>
+              </select>
+            </label>
+            <label className="profile-edit-full">
+              <span>Chave Pix</span>
+              <input
+                onChange={(event) => setProfileForm((current) => ({ ...current, pix_account: event.target.value }))}
+                value={profileForm.pix_account}
+              />
+            </label>
+          </div>
+          <div className="profile-edit-actions">
+            <button onClick={() => setIsEditingProfile(false)} type="button">
+              Cancelar
+            </button>
+            <button disabled={isSavingProfile} onClick={handleSaveProfile} type="button">
+              {isSavingProfile ? "Salvando..." : "Salvar alterações"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="profile-section-title">
         <span><Icon name="car" /></span>
@@ -2886,15 +3141,15 @@ function DriverProfileScreen({
       )}
 
       <div className="profile-list">
-        <ProfileRow detail={profile?.full_name || "Não informado"} icon="user" label="Nome completo" />
-        <ProfileRow detail={formatDriverPhone(profile?.phone)} icon="phone" label="Telefone" />
-        <ProfileRow detail={profile?.pix_account || "Não informado"} icon="pix" label="Chave PIX" />
+        <ProfileRow detail={profile?.full_name || "Não informado"} icon="user" label="Nome completo" onClick={() => setIsEditingProfile(true)} />
+        <ProfileRow detail={formatDriverPhone(profile?.phone)} icon="phone" label="Telefone" onClick={() => setIsEditingProfile(true)} />
+        <ProfileRow detail={profile?.pix_account || "Não informado"} icon="pix" label="Chave PIX" onClick={() => setIsEditingProfile(true)} />
         <ProfileRow detail="Gerencie seus avisos e notificações" icon="help" label="Avisos" />
         <ProfileRow detail="Login, senha e verificação" icon="shield" label="Segurança" />
         <ProfileRow detail="Preferências do app" icon="settings" label="Configurações" />
       </div>
 
-      <FormToast message={error} />
+      <FormToast message={success || error} tone={success ? "success" : "warning"} />
       <button className="profile-primary-action" onClick={handleRefreshProfile} type="button">
         <FiRefreshCw aria-hidden="true" />
         Atualizar dados
@@ -2930,10 +3185,10 @@ function VehicleListScreen({
       year: vehicle.year == null ? "" : String(vehicle.year),
     });
     setVehicleUploads({
-      front: vehicle.front_photo_url ? { url: vehicle.front_photo_url } : undefined,
-      interior: vehicle.interior_photo_url ? { url: vehicle.interior_photo_url } : undefined,
-      rear: vehicle.rear_photo_url ? { url: vehicle.rear_photo_url } : undefined,
-      side: vehicle.side_photo_url ? { url: vehicle.side_photo_url } : undefined,
+      front: vehicle.front_photo_url ? { url: resolveBucketUrl(vehicle.front_photo_url) } : undefined,
+      interior: vehicle.interior_photo_url ? { url: resolveBucketUrl(vehicle.interior_photo_url) } : undefined,
+      rear: vehicle.rear_photo_url ? { url: resolveBucketUrl(vehicle.rear_photo_url) } : undefined,
+      side: vehicle.side_photo_url ? { url: resolveBucketUrl(vehicle.side_photo_url) } : undefined,
     });
     go("vehicle-photos");
   }
@@ -4013,6 +4268,161 @@ function VehicleWaitingCard({ vehicle }: { vehicle: DriverProfile["vehicles"][nu
   );
 }
 
+function ReviewsScreen({ go, token }: { go: (screen: Screen) => void; token?: string }) {
+  const [profile, setProfile] = useState<DriverProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const ratingAverage = profile?.rating_average ?? 0;
+  const ratingCount = profile?.rating_count ?? 0;
+  const ratingLabel = ratingCount > 0 ? ratingAverage.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : "--";
+  const completedLabel = ratingCount === 1 ? "1 avaliação recebida" : `${ratingCount} avaliações recebidas`;
+
+  const loadReviewsProfile = useCallback(async () => {
+    if (!token) {
+      setError("Entre novamente para ver suas avaliações.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError("");
+    try {
+      setProfile(await getDriverProfile(token));
+    } catch (err) {
+      setProfile(null);
+      setError(err instanceof Error ? err.message : "Não foi possível carregar sua reputação agora.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadReviewsProfile();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadReviewsProfile]);
+
+  return (
+    <section className="scroll-screen reviews-screen">
+      <header className="reviews-header">
+        <button aria-label="Voltar" onClick={() => go("dashboard")} type="button">
+          <FiArrowLeft aria-hidden="true" />
+        </button>
+        <h1>Avaliações</h1>
+        <button aria-label="Atualizar avaliações" disabled={isLoading} onClick={loadReviewsProfile} type="button">
+          <FiRefreshCw aria-hidden="true" />
+        </button>
+      </header>
+
+      <section className="reviews-score-card" aria-label="Resumo da reputação">
+        <div className="reviews-score-ring">
+          <strong>{ratingLabel}</strong>
+          <span>nota</span>
+        </div>
+        <div>
+          <span className="reviews-stars" aria-hidden="true">
+            ★★★★★
+          </span>
+          <h2>{ratingCount > 0 ? "Sua reputação está ativa" : "Reputação em construção"}</h2>
+          <p>{ratingCount > 0 ? completedLabel : "As avaliações dos passageiros e clientes aparecerão aqui depois das primeiras corridas e entregas concluídas."}</p>
+        </div>
+      </section>
+
+      <div className="reviews-metrics-grid">
+        <article>
+          <small>Média</small>
+          <strong>{ratingLabel}</strong>
+        </article>
+        <article>
+          <small>Total</small>
+          <strong>{ratingCount}</strong>
+        </article>
+        <article>
+          <small>Status</small>
+          <strong>{ratingCount > 0 ? "Ativa" : "Inicial"}</strong>
+        </article>
+      </div>
+
+      <FormToast message={error} />
+      {isLoading ? <p className="reviews-empty">Carregando avaliações...</p> : null}
+      {!isLoading ? (
+        <section className="reviews-empty-card">
+          <FiCheckCircle aria-hidden="true" />
+          <strong>Comentários em breve</strong>
+          <p>Quando uma corrida ou entrega for avaliada, os comentários e notas individuais serão listados nesta tela.</p>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function NotificationsScreen({ go, token }: { go: (screen: Screen) => void; token?: string }) {
+  const [notifications, setNotifications] = useState<DriverNotification[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadNotifications = useCallback(() => {
+    if (!token) {
+      setError("Entre novamente para ver suas notificações.");
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    listDriverNotifications(token)
+      .then(setNotifications)
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Não foi possível carregar suas notificações agora.");
+      })
+      .finally(() => setIsLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(loadNotifications, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadNotifications]);
+
+  return (
+    <section className="scroll-screen reviews-screen">
+      <header className="reviews-header">
+        <button aria-label="Voltar" onClick={() => go("dashboard")} type="button">
+          <FiArrowLeft aria-hidden="true" />
+        </button>
+        <h1>Notificações</h1>
+        <button aria-label="Atualizar" onClick={loadNotifications} type="button">
+          <FiRefreshCw aria-hidden="true" />
+        </button>
+      </header>
+
+      <FormToast message={error} />
+
+      {isLoading ? <p className="reviews-empty">Carregando notificações...</p> : null}
+      {!isLoading && notifications.length === 0 ? (
+        <section className="reviews-empty-card">
+          <FiCheckCircle aria-hidden="true" />
+          <strong>Nenhuma mensagem nova</strong>
+          <p>Quando a equipe SUWAVE enviar avisos sobre cadastro, documentos ou veículo, eles aparecerão aqui.</p>
+        </section>
+      ) : null}
+
+      <div className="reviews-metrics-grid">
+        {notifications.map((notification) => (
+          <article className="reviews-empty-card" key={notification.id}>
+            <strong>{notification.title}</strong>
+            <p>{notification.body}</p>
+            <span>{new Date(notification.created_at).toLocaleString("pt-BR")}</span>
+            {notification.action_label ? (
+              <button className="link-button" type="button" onClick={() => go("vehicle-list")}>
+                {notification.action_label}
+              </button>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Dashboard({
   go,
   onLogout,
@@ -4518,6 +4928,26 @@ function Dashboard({
             >
               <Icon name="pix" />
               <span>Financeiro</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsDriverMenuOpen(false);
+                go("reviews");
+              }}
+              type="button"
+            >
+              <Icon name="spark" />
+              <span>Avaliações</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsDriverMenuOpen(false);
+                go("notifications");
+              }}
+              type="button"
+            >
+              <Icon name="help" />
+              <span>Notificações</span>
             </button>
             <button type="button">
               <Icon name="settings" />
@@ -5550,6 +5980,10 @@ export default function Home() {
         return <DriverProfileScreen go={go} onLogout={handleLogout} token={driverToken} />;
       case "finance":
         return <FinanceScreen go={go} token={driverToken} />;
+      case "reviews":
+        return <ReviewsScreen go={go} token={driverToken} />;
+      case "notifications":
+        return <NotificationsScreen go={go} token={driverToken} />;
       case "register-trip":
         return <RegisterTrip go={go} token={driverToken} />;
       case "trip-history":
