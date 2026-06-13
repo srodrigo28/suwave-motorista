@@ -1770,6 +1770,9 @@ h2 {
 .cnh-screen .doc-preview.has-document-preview {
   background: #edf2f7;
   border: 1px solid #d8e0e8;
+  border-radius: 10px;
+  grid-column: 1 / -1;
+  height: 220px;
 }
 
 .cnh-screen .doc-preview.has-document-preview::before,
@@ -1783,6 +1786,45 @@ h2 {
   object-fit: cover;
   object-position: center;
   width: 100%;
+}
+
+.cnh-screen .doc-preview .doc-status {
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(8, 28, 22, 0.18);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  padding: 9px 16px;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 2;
+}
+
+.cnh-screen .doc-preview .doc-retake {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  bottom: 12px;
+  box-shadow: 0 6px 18px rgba(8, 28, 22, 0.18);
+  color: #fff;
+  display: flex;
+  font-size: 16px;
+  font-weight: 650;
+  gap: 10px;
+  height: 48px;
+  justify-content: center;
+  left: 12px;
+  position: absolute;
+  right: 12px;
+  z-index: 2;
 }
 
 .cnh-screen .doc-preview.cnh-front {

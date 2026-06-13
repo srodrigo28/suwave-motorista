@@ -1285,9 +1285,11 @@ function Signup({
   signupStep: number;
 }) {
   const [error, setError] = useState("");
+  const [showLoginHint, setShowLoginHint] = useState(false);
   const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
 
   function updateField(field: keyof DriverSignupForm, value: string | boolean) {
+    if (showLoginHint) setShowLoginHint(false);
     setForm({ ...form, [field]: value });
   }
 
@@ -1354,14 +1356,28 @@ function Signup({
     }
 
     setError("");
-    setSignupStep(2);
+    setIsCheckingAvailability(true);
+    try {
+      const email = form.email.trim().toLowerCase();
+      const availability = await checkDriverAccountAvailability({ email });
+      if (availability.conflicts.email?.exists) {
+        setError("Este e-mail já está cadastrado em outra conta. Entre com a conta correta ou use um e-mail diferente.");
+        setShowLoginHint(true);
+        return;
+      }
+      setSignupStep(2);
+    } catch (err) {
+      if (err instanceof DriverApiError && err.code === "internal_error") {
+        setSignupStep(2);
+        return;
+      }
+      setSignupStep(2);
+    } finally {
+      setIsCheckingAvailability(false);
+    }
   }
 
   async function handleContinue() {
-    if (!validateAccountStep()) {
-      return;
-    }
-
     setError("");
     const cpf = onlyDigits(form.cpf);
     const cnpj = onlyDigits(form.cnpj);
@@ -1403,7 +1419,11 @@ function Signup({
         return;
       }
 
-      setError(err instanceof Error ? err.message : "Não foi possível validar os dados agora.");
+      const message = err instanceof Error ? err.message : "Não foi possível validar os dados agora.";
+      setError(message);
+      if (message.includes("outra conta SUWAVE")) {
+        setShowLoginHint(true);
+      }
     } finally {
       setIsCheckingAvailability(false);
     }
@@ -1510,7 +1530,9 @@ function Signup({
         )}
       </div>
       <FormToast message={error} />
-      {signupStep === 1 ? (
+      {showLoginHint ? (
+        <ActionButton onClick={() => go("login")}>Entrar com conta existente</ActionButton>
+      ) : signupStep === 1 ? (
         <ActionButton disabled={isCheckingAvailability} onClick={handleNextSignupStep}>
           {isCheckingAvailability ? "Validando..." : "Continuar"}
         </ActionButton>
@@ -2049,8 +2071,15 @@ function Cnh({
         <strong>Frente da CNH</strong>
         <div className={cnhPreviewUrls.front ? "doc-preview cnh-front has-document-preview" : "doc-preview cnh-front"}>
           {cnhPreviewUrls.front ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img alt="Prévia da frente da CNH" src={cnhPreviewUrls.front} />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="Prévia da frente da CNH" src={cnhPreviewUrls.front} />
+              <span className="doc-status">✓ Selecionado</span>
+              <button className="doc-retake" onClick={() => frontInputRef.current?.click()} type="button">
+                <Icon name="camera" />
+                Trocar imagem
+              </button>
+            </>
           ) : (
             <>
               <i />
@@ -2059,7 +2088,15 @@ function Cnh({
             </>
           )}
         </div>
-        <span>{cnhFront ? "✓ Selecionado" : "Pendente"}</span>
+        {!cnhPreviewUrls.front ? (
+          <>
+            <span>{cnhFront ? "✓ Selecionado" : "Pendente"}</span>
+            <button onClick={() => frontInputRef.current?.click()} type="button">
+              <Icon name="camera" />
+              {cnhFront ? "Trocar imagem" : "Enviar imagem"}
+            </button>
+          </>
+        ) : null}
         <input
           accept="image/*,.pdf"
           hidden
@@ -2067,17 +2104,20 @@ function Cnh({
           ref={frontInputRef}
           type="file"
         />
-        <button onClick={() => frontInputRef.current?.click()} type="button">
-          <Icon name="camera" />
-          {cnhFront ? "Trocar imagem" : "Enviar imagem"}
-        </button>
       </div>
       <div className="upload-card">
         <strong>Verso da CNH</strong>
         <div className={cnhPreviewUrls.back ? "doc-preview cnh-back has-document-preview" : "doc-preview cnh-back"}>
           {cnhPreviewUrls.back ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img alt="Prévia do verso da CNH" src={cnhPreviewUrls.back} />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="Prévia do verso da CNH" src={cnhPreviewUrls.back} />
+              <span className="doc-status">✓ Selecionado</span>
+              <button className="doc-retake" onClick={() => backInputRef.current?.click()} type="button">
+                <Icon name="camera" />
+                Trocar imagem
+              </button>
+            </>
           ) : (
             <>
               <i />
@@ -2085,7 +2125,15 @@ function Cnh({
             </>
           )}
         </div>
-        <span>{cnhBack ? "✓ Selecionado" : "Pendente"}</span>
+        {!cnhPreviewUrls.back ? (
+          <>
+            <span>{cnhBack ? "✓ Selecionado" : "Pendente"}</span>
+            <button onClick={() => backInputRef.current?.click()} type="button">
+              <Icon name="camera" />
+              {cnhBack ? "Trocar imagem" : "Enviar imagem"}
+            </button>
+          </>
+        ) : null}
         <input
           accept="image/*,.pdf"
           hidden
@@ -2093,10 +2141,6 @@ function Cnh({
           ref={backInputRef}
           type="file"
         />
-        <button onClick={() => backInputRef.current?.click()} type="button">
-          <Icon name="camera" />
-          {cnhBack ? "Trocar imagem" : "Enviar imagem"}
-        </button>
       </div>
       <p className="info-line">ⓘ Verifique se todos os dados estão legíveis</p>
       <FormToast message={error} />
@@ -2870,12 +2914,12 @@ function DriverProfileScreen({
   function fillProfileForm(nextProfile: DriverProfile) {
     setProfileForm({
       birth_date: formatDateInput(nextProfile.birth_date),
-      cnpj: nextProfile.cnpj ?? "",
-      cpf: nextProfile.cpf ?? "",
+      cnpj: maskCnpj(nextProfile.cnpj ?? ""),
+      cpf: maskCpf(nextProfile.cpf ?? ""),
       email: nextProfile.email ?? "",
       full_name: nextProfile.full_name ?? "",
       gender: nextProfile.gender ?? "",
-      phone: nextProfile.phone ?? "",
+      phone: maskPhone(nextProfile.phone ?? ""),
       pix_account: nextProfile.pix_account ?? "",
       pix_key_type: nextProfile.pix_key_type ?? "",
     });
@@ -3031,7 +3075,8 @@ function DriverProfileScreen({
               <span>Telefone / WhatsApp</span>
               <input
                 inputMode="tel"
-                onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))}
+                maxLength={15}
+                onChange={(event) => setProfileForm((current) => ({ ...current, phone: maskPhone(event.target.value) }))}
                 value={profileForm.phone}
               />
             </label>
@@ -3047,7 +3092,8 @@ function DriverProfileScreen({
               <span>CPF</span>
               <input
                 inputMode="numeric"
-                onChange={(event) => setProfileForm((current) => ({ ...current, cpf: event.target.value }))}
+                maxLength={14}
+                onChange={(event) => setProfileForm((current) => ({ ...current, cpf: maskCpf(event.target.value) }))}
                 value={profileForm.cpf}
               />
             </label>
@@ -3055,7 +3101,8 @@ function DriverProfileScreen({
               <span>CNPJ</span>
               <input
                 inputMode="numeric"
-                onChange={(event) => setProfileForm((current) => ({ ...current, cnpj: event.target.value }))}
+                maxLength={18}
+                onChange={(event) => setProfileForm((current) => ({ ...current, cnpj: maskCnpj(event.target.value) }))}
                 value={profileForm.cnpj}
               />
             </label>
