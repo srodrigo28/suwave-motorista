@@ -1789,13 +1789,13 @@ h2 {
 }
 
 .cnh-screen .doc-preview .doc-status {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(8, 8, 8, 0.28);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 196, 0, 0.7);
   border-radius: 999px;
   box-shadow: 0 6px 18px rgba(8, 28, 22, 0.18);
-  color: #fff;
+  color: var(--suwave-yellow);
   font-size: 15px;
   font-weight: 800;
   padding: 9px 16px;
@@ -1807,14 +1807,14 @@ h2 {
 
 .cnh-screen .doc-preview .doc-retake {
   align-items: center;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(8, 8, 8, 0.28);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 196, 0, 0.7);
   border-radius: 8px;
   bottom: 12px;
   box-shadow: 0 6px 18px rgba(8, 28, 22, 0.18);
-  color: #fff;
+  color: var(--suwave-yellow);
   display: flex;
   font-size: 16px;
   font-weight: 650;

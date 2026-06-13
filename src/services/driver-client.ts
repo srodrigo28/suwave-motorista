@@ -375,6 +375,36 @@ export type DriverNotification = {
   user_id?: string;
 };
 
+function reportClientError(payload: {
+  message: string;
+  code?: string;
+  path?: string;
+  statusCode?: number;
+  context?: Record<string, unknown>;
+}) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    void fetch(`${apiBaseUrl}/monitor/errors`, {
+      body: JSON.stringify({
+        code: payload.code,
+        context: payload.context ?? {},
+        level: payload.statusCode && payload.statusCode < 500 ? "warning" : "error",
+        message: payload.message,
+        path: payload.path,
+        source: "motorista",
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // best-effort reporting only, never block the original flow
+  }
+}
+
 async function parseResponse<T>(response: Response, options: { authRequired?: boolean } = {}) {
   const authRequired = options.authRequired ?? true;
   const body = (await response.json().catch(() => ({}))) as Partial<ApiEnvelope<T>> & Record<string, unknown>;
@@ -384,7 +414,16 @@ async function parseResponse<T>(response: Response, options: { authRequired?: bo
       window.dispatchEvent(new CustomEvent(DRIVER_AUTH_EXPIRED_EVENT));
       throw new DriverApiError("Sua sessão expirou. Entre novamente para continuar.", "token_expired");
     }
-    throw apiError(body);
+
+    const error = apiError(body);
+    reportClientError({
+      code: error.code,
+      context: { fields: error.fields ?? null },
+      message: error.message,
+      path: new URL(response.url).pathname,
+      statusCode: response.status,
+    });
+    throw error;
   }
 
   return body.data as T;
@@ -393,12 +432,18 @@ async function parseResponse<T>(response: Response, options: { authRequired?: bo
 async function apiRequest(path: string, init?: RequestInit) {
   try {
     const signal = AbortSignal.timeout(15000);
-    return await fetch(`${apiBaseUrl}${path}`, { signal, ...init });
+    return await fetch(`${apiBaseUrl}${path}`, {
+      ...init,
+      headers: { "X-Client-App": "motorista", ...(init?.headers ?? {}) },
+      signal,
+    });
   } catch (err) {
-    if (err instanceof Error && err.name === "TimeoutError") {
-      throw new Error("A API demorou muito para responder. Verifique sua conexão.");
-    }
-    throw new Error("API principal indisponível. Verifique a conexão ou a URL configurada da API SUWAVE.");
+    const message =
+      err instanceof Error && err.name === "TimeoutError"
+        ? "A API demorou muito para responder. Verifique sua conexão."
+        : "API principal indisponível. Verifique a conexão ou a URL configurada da API SUWAVE.";
+    reportClientError({ code: "network_error", message, path });
+    throw new Error(message);
   }
 }
 
