@@ -1,3 +1,5 @@
+import type { DeliveryStatus, DriverStatus, RideStatus, TripStatus, VehicleStatus } from "../types/enums";
+
 function getApiBaseUrl() {
   const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "https://99dev.pro/suwave-api").replace(/\/$/, "");
   return baseUrl.endsWith("/api/v1") ? baseUrl : `${baseUrl}/api/v1`;
@@ -5,6 +7,22 @@ function getApiBaseUrl() {
 
 const apiBaseUrl = getApiBaseUrl();
 export const DRIVER_AUTH_EXPIRED_EVENT = "suwave-driver-auth-expired";
+
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+
+function validateImageFile(file: File): void {
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+    throw new DriverApiError("Formato de imagem inválido. Use JPEG, PNG ou WebP.", "invalid_file_type");
+  }
+  if (file.size > MAX_IMAGE_SIZE_BYTES) {
+    throw new DriverApiError("A imagem deve ter no máximo 10 MB.", "file_too_large");
+  }
+}
+
+function generateRequestId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 type ApiEnvelope<T> = {
   data: T;
@@ -201,7 +219,7 @@ export type DriverVehicle = {
   plate: string;
   rear_photo_url?: string | null;
   side_photo_url?: string | null;
-  status: string;
+  status: VehicleStatus;
   year?: string | number | null;
 };
 
@@ -223,7 +241,7 @@ export type DriverProfile = {
   phone?: string | null;
   pix_account?: string | null;
   pix_key_type?: string | null;
-  status: string;
+  status: DriverStatus;
   is_online: boolean;
   online_since?: string | null;
   last_accuracy_meters?: number | null;
@@ -254,7 +272,8 @@ export type DriverRideRequest = {
   passenger_phone?: string | null;
   requested_at: string;
   requested_seats: number;
-  status: "PROCURANDO" | "SEM_MOTORISTA" | "ACEITA" | "RECUSADA" | "CONCLUIDA";
+  status: RideStatus;
+  vehicle_type?: "bike" | "car" | "moto" | null;
 };
 
 export type DriverRouteCoordinate = {
@@ -278,7 +297,7 @@ export type DriverPlannedTrip = {
   total_distance_km: number;
   duration_seconds: number;
   route_geometry?: DriverRouteCoordinate[] | null;
-  status: "ATIVA" | "CANCELADA" | "CONCLUIDA";
+  status: TripStatus;
   created_at: string;
   updated_at: string;
 };
@@ -318,7 +337,7 @@ export type DriverDelivery = {
   picked_up_at?: string | null;
   seller: string;
   short_id: string;
-  status: "paid" | "preparing" | "on_route" | "delivered";
+  status: DeliveryStatus;
   status_label: string;
   total: string;
 };
@@ -429,12 +448,13 @@ async function parseResponse<T>(response: Response, options: { authRequired?: bo
   return body.data as T;
 }
 
-async function apiRequest(path: string, init?: RequestInit) {
+async function apiRequest(path: string, init?: RequestInit, timeoutMs = 15000) {
+  const requestId = generateRequestId();
   try {
-    const signal = AbortSignal.timeout(15000);
+    const signal = AbortSignal.timeout(timeoutMs);
     return await fetch(`${apiBaseUrl}${path}`, {
       ...init,
-      headers: { "X-Client-App": "motorista", ...(init?.headers ?? {}) },
+      headers: { "X-Client-App": "motorista", "X-Request-ID": requestId, ...(init?.headers ?? {}) },
       signal,
     });
   } catch (err) {
@@ -442,7 +462,7 @@ async function apiRequest(path: string, init?: RequestInit) {
       err instanceof Error && err.name === "TimeoutError"
         ? "A API demorou muito para responder. Verifique sua conexão."
         : "API principal indisponível. Verifique a conexão ou a URL configurada da API SUWAVE.";
-    reportClientError({ code: "network_error", message, path });
+    reportClientError({ code: "network_error", message, path, context: { request_id: requestId } });
     throw new Error(message);
   }
 }
@@ -503,6 +523,16 @@ export async function requestDriverPasswordReset(input: { email?: string; whatsa
   return parseResponse<{ email: string; whatsapp?: string | null }>(response);
 }
 
+export async function resetDriverPassword(token: string, password: string) {
+  const response = await apiRequest("/auth/password/reset", {
+    body: JSON.stringify({ token, password }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  return parseResponse<{ email: string }>(response);
+}
+
 export async function getDriverTerms() {
   const response = await apiRequest("/driver/terms");
   return parseResponse<DriverTerms>(response);
@@ -536,7 +566,7 @@ export async function saveDriverProfile(
     method: "POST",
   });
 
-  return parseResponse(response);
+  return parseResponse<DriverProfile>(response);
 }
 
 export async function updateDriverProfile(
@@ -559,10 +589,12 @@ export async function updateDriverProfile(
     method: "PUT",
   });
 
-  return parseResponse(response);
+  return parseResponse<DriverProfile>(response);
 }
 
 export async function uploadDriverImage(token: string, file: File, context: DriverUploadContext) {
+  validateImageFile(file);
+
   const traceId = recordDriverUploadTrace({
     action: "upload_started",
     context,
@@ -580,7 +612,7 @@ export async function uploadDriverImage(token: string, file: File, context: Driv
     body: formData,
     headers: { Authorization: `Bearer ${token}` },
     method: "POST",
-  });
+  }, 60000);
 
   const upload = await parseResponse<UploadResult>(response);
   recordDriverUploadTrace({
@@ -771,7 +803,11 @@ export async function pingDriverLocation(
   },
 ) {
   const response = await apiRequest("/driver/location/ping", {
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      ...input,
+      latitude: parseFloat(input.latitude.toFixed(7)),
+      longitude: parseFloat(input.longitude.toFixed(7)),
+    }),
     headers: authJsonHeaders(token),
     method: "POST",
   });
@@ -875,8 +911,8 @@ export async function listDriverTrips(token: string) {
   return parseResponse<DriverPlannedTrip[]>(response);
 }
 
-export async function listDriverHistory(token: string) {
-  const response = await apiRequest("/driver/history", {
+export async function listDriverHistory(token: string, limit = 50) {
+  const response = await apiRequest(`/driver/history?limit=${limit}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 

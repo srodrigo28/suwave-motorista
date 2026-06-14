@@ -213,6 +213,285 @@ button {
   width: 100%;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Wordmark SUWAVE padronizado (logo + subtitulo opcional + splash)        */
+/* Mesmo componente/efeito em app/web, app/logista, app/motorista,         */
+/* app/painel — ver _components/suwave-wordmark.tsx                        */
+/* ---------------------------------------------------------------------- */
+
+.suwaveWordmark {
+  display: grid;
+  justify-items: center;
+  line-height: 1;
+  max-width: 100%;
+}
+
+.suwaveLogo {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.suwaveLogoText,
+.suwaveLogoWave {
+  display: inline-block;
+  font-family: Arial Black, Arial, Helvetica, sans-serif;
+  font-size: clamp(46px, 13.2vw, 74px);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 0.9;
+}
+
+.suwaveLogoText {
+  color: #050505;
+}
+
+.suwaveLogoWave {
+  color: #ffb400;
+  margin-inline: -0.025em;
+}
+
+.suwaveLogoSub {
+  color: #050505;
+  display: block;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(15px, 4.2vw, 23px);
+  font-weight: 900;
+  letter-spacing: 0.44em;
+  line-height: 1;
+  margin-top: 15px;
+  padding-left: 0.44em;
+  text-align: center;
+}
+
+.suwaveSplash {
+  align-items: center;
+  background: #fff;
+  color: #050505;
+  display: grid;
+  inset: 0;
+  justify-items: center;
+  overflow: hidden;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  position: absolute;
+  z-index: 100;
+}
+
+.suwaveSplashIsland {
+  animation: suwaveIslandIn 0.7s ease-out forwards;
+  background: #030303;
+  border-radius: 999px;
+  height: 40px;
+  left: 50%;
+  opacity: 0;
+  position: absolute;
+  top: 18px;
+  transform: translateX(-50%) scale(0.94);
+  width: 126px;
+}
+
+.suwaveSplashIsland span {
+  background: #07172a;
+  border-radius: 999px;
+  box-shadow: 0 0 9px #155dff;
+  display: block;
+  height: 5px;
+  position: absolute;
+  right: 22px;
+  top: 17px;
+  width: 5px;
+}
+
+.suwaveSplashWordmark {
+  animation: suwaveLogoFloat 2.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  display: grid;
+  inline-size: min(100%, 390px);
+  isolation: isolate;
+  justify-items: center;
+  overflow: visible;
+  place-items: center;
+  position: relative;
+}
+
+.suwaveSplashLogo {
+  align-items: center;
+  animation: suwaveReveal 2.45s ease-out forwards;
+  color: #050505;
+  display: flex;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(48px, 14.8vw, 82px);
+  font-weight: 900;
+  gap: clamp(1px, 0.7vw, 4px);
+  letter-spacing: 0;
+  line-height: 1;
+  max-inline-size: 100%;
+  opacity: 0;
+  padding-inline: 0.02em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.suwaveSplashLogoText {
+  color: #050505;
+  display: inline-block;
+}
+
+.suwaveSplashWave {
+  animation: suwaveWavePulse 2.45s ease-out forwards;
+  color: #ffb400;
+  letter-spacing: 0;
+  margin-inline: -0.02em;
+  transform-origin: 50% 60%;
+}
+
+.suwaveSplashWordmark strong {
+  animation: suwaveReveal 2.35s ease-out forwards;
+  animation-delay: 0.22s;
+  color: #050505;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(17px, 4.6vw, 24px);
+  font-weight: 900;
+  letter-spacing: 0.42em;
+  line-height: 1;
+  margin-top: 13px;
+  opacity: 0;
+  padding-left: 0.38em;
+}
+
+.suwaveSplashWordmark i {
+  animation: suwaveLight 2.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 180 0 / 0.02),
+    rgb(255 180 0 / 0.62),
+    rgb(255 255 255 / 0.92),
+    rgb(255 180 0 / 0.18),
+    transparent
+  );
+  border-radius: 999px;
+  box-shadow:
+    0 0 14px rgb(255 180 0 / 0.26),
+    0 0 28px rgb(255 180 0 / 0.18);
+  height: clamp(8px, 2vw, 14px);
+  left: -52%;
+  opacity: 0;
+  position: absolute;
+  top: 50%;
+  width: 46%;
+  z-index: 2;
+}
+
+@keyframes suwaveIslandIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.9);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@keyframes suwaveLogoFloat {
+  0% {
+    transform: translateY(18px) scale(0.985);
+  }
+
+  52% {
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    transform: translateY(-2px) scale(1);
+  }
+}
+
+@keyframes suwaveLight {
+  0% {
+    left: -52%;
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 1;
+  }
+
+  72% {
+    opacity: 1;
+  }
+
+  88% {
+    left: 106%;
+    opacity: 0;
+  }
+
+  100% {
+    left: 106%;
+    opacity: 0;
+  }
+}
+
+@keyframes suwaveReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+
+  18% {
+    opacity: 0.2;
+  }
+
+  68% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes suwaveWavePulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.82) rotate(-4deg);
+  }
+
+  32% {
+    opacity: 1;
+    transform: scale(1.08) rotate(0deg);
+  }
+
+  60% {
+    transform: scale(0.98);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suwaveSplashWordmark,
+  .suwaveSplashIsland,
+  .suwaveSplashLogo,
+  .suwaveSplashWordmark strong {
+    animation: none;
+    opacity: 1;
+  }
+
+  .suwaveSplashWordmark i {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 .login-hero {
   margin: 0 auto 16px;
   max-width: 420px;
@@ -1135,6 +1414,31 @@ h2 {
   border: 1px solid #c8d4db;
   box-shadow: 0 10px 22px rgb(12 42 58 / 0.08);
   color: var(--suwave-black);
+}
+
+.action.is-online {
+  animation: onlineNeonPulse 1.8s ease-in-out infinite;
+  background: #baffc9;
+  border: 1px solid #6dffa0;
+  color: #0a3d1f;
+}
+
+@keyframes onlineNeonPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgb(96 255 150 / 0.55), 0 0 14px rgb(96 255 150 / 0.35);
+  }
+
+  50% {
+    box-shadow: 0 0 14px rgb(96 255 150 / 0.85), 0 0 28px rgb(96 255 150 / 0.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action.is-online {
+    animation: none;
+    box-shadow: 0 0 14px rgb(96 255 150 / 0.7);
+  }
 }
 
 .action .action-icon {
@@ -3095,9 +3399,109 @@ h2 {
   color: var(--suwave-black);
 }
 
+.ride-card-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ride-vehicle-badge {
+  background: #e8f8ef;
+  border: 1px solid #9dd6b9;
+  border-radius: 20px;
+  color: #0a5c3d;
+  display: inline-block;
+  font-size: 10px !important;
+  font-weight: 800;
+  padding: 1px 8px;
+  text-transform: none !important;
+}
+
+.ride-fare-row {
+  align-items: baseline;
+  background: #f0fff8;
+  border: 1px solid #b3ecd4;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 7px 10px;
+}
+
+.ride-fare-label {
+  color: #0a6b4f !important;
+  display: inline !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+  text-transform: none !important;
+}
+
+.ride-fare-value {
+  color: #0a3d22;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.ride-new-toast {
+  animation: slideInToast 0.3s ease-out;
+  background: var(--suwave-yellow);
+  border-radius: 8px;
+  color: var(--suwave-black);
+  font-size: 14px;
+  font-weight: 900;
+  margin-bottom: 4px;
+  padding: 11px 16px;
+  text-align: center;
+}
+
+@keyframes slideInToast {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .delivery-offer-card {
   background: #f7fbff;
   border-color: #cfe0ec;
+}
+
+.ride-active-eta {
+  align-items: center;
+  background: #e8f8ef;
+  border-radius: 10px;
+  display: flex;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 12px 16px;
+}
+
+.ride-active-eta strong {
+  color: #0a6b4f;
+  font-size: 18px;
+}
+
+.ride-active-eta span {
+  color: #607381;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.ride-active-pickup {
+  color: #3a4d5c;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.ride-active-pickup small {
+  color: #607381;
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  margin-bottom: 2px;
 }
 
 .ride-actions button:disabled {

@@ -28,6 +28,7 @@ import {
   pingDriverLocation,
   registerDriverAccount,
   requestDriverPasswordReset,
+  resetDriverPassword,
   saveDriverCnh,
   saveDriverFacePhoto,
   saveDriverProfile,
@@ -56,11 +57,13 @@ import {
   type VehicleForm,
   type VehicleUploads,
 } from "@/stores/driver-flow-store";
+import { SuwaveWordmark } from "./_components/suwave-wordmark";
 
 type Screen =
   | "login"
   | "forgot-password"
   | "forgot-success"
+  | "reset-password"
   | "signup"
   | "terms"
   | "face"
@@ -79,7 +82,15 @@ type Screen =
   | "vehicle-brand"
   | "vehicle-data"
   | "vehicle-photos"
-  | "vehicle-review";
+  | "vehicle-review"
+  | "ride-available"
+  | "ride-active"
+  | "ride-declined"
+  | "ride-completed"
+  | "delivery-available"
+  | "delivery-accepted"
+  | "delivery-active"
+  | "delivery-completed";
 
 type PasswordResetContact = {
   email?: string;
@@ -924,12 +935,14 @@ function maskedDateToIso(value: string) {
 
 function ActionButton({
   children,
+  className,
   disabled = false,
   iconDirection = "right",
   onClick,
   secondary = false,
 }: {
   children: React.ReactNode;
+  className?: string;
   disabled?: boolean;
   iconDirection?: "left" | "right";
   onClick: () => void;
@@ -937,7 +950,7 @@ function ActionButton({
 }) {
   return (
     <button
-      className={`${secondary ? "action secondary" : "action"} ${iconDirection === "left" ? "action-back" : ""}`}
+      className={`${secondary ? "action secondary" : "action"} ${iconDirection === "left" ? "action-back" : ""} ${className ?? ""}`}
       disabled={disabled}
       onClick={onClick}
       type="button"
@@ -1080,14 +1093,9 @@ function Login({
 
   return (
     <section className="scroll-screen center-screen login-screen">
-      <Image
-        alt="SUWAVE Motorista"
-        className="login-logo"
-        height={150}
-        priority
-        src="/motorista/inicio-logo.png"
-        width={520}
-      />
+      <div className="login-logo">
+        <SuwaveWordmark subtitle="MOTORISTA" />
+      </div>
       <div className="login-hero" aria-hidden="true">
         <Image
           alt=""
@@ -1160,14 +1168,9 @@ function ForgotPassword({
 
   return (
     <section className="scroll-screen center-screen login-screen forgot-password-screen">
-      <Image
-        alt="SUWAVE Motorista"
-        className="login-logo"
-        height={150}
-        priority
-        src="/motorista/inicio-logo.png"
-        width={520}
-      />
+      <div className="login-logo">
+        <SuwaveWordmark subtitle="MOTORISTA" />
+      </div>
       <div className="login-hero" aria-hidden="true">
         <Image
           alt=""
@@ -1230,14 +1233,9 @@ function ForgotPasswordSuccess({
 
   return (
     <section className="scroll-screen center-screen login-screen forgot-success-screen">
-      <Image
-        alt="SUWAVE Motorista"
-        className="login-logo"
-        height={150}
-        priority
-        src="/motorista/inicio-logo.png"
-        width={520}
-      />
+      <div className="login-logo">
+        <SuwaveWordmark subtitle="MOTORISTA" />
+      </div>
       <div className="login-hero" aria-hidden="true">
         <Image
           alt=""
@@ -1267,6 +1265,517 @@ function ForgotPasswordSuccess({
         {isResending ? "Reenviando..." : "Reenviar link"}
       </ActionButton>
       <FooterNote />
+    </section>
+  );
+}
+
+function ResetPassword({ go }: { go: (screen: Screen) => void }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [message, setMessage] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    setMessage("");
+    if (password.length < 6) {
+      setMessage("Use uma senha com pelo menos 6 caracteres.");
+      return;
+    }
+    if (password !== confirm) {
+      setMessage("As senhas não coincidem.");
+      return;
+    }
+    const token = new URLSearchParams(window.location.search).get("token") ?? "";
+    if (!token) {
+      setMessage("Link inválido. Solicite um novo link de redefinição.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await resetDriverPassword(token, password);
+      setSuccess(true);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível redefinir sua senha.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (success) {
+    return (
+      <section className="scroll-screen center-screen login-screen forgot-success-screen">
+        <div className="login-logo">
+          <SuwaveWordmark subtitle="MOTORISTA" />
+        </div>
+        <div className="success-check" aria-hidden="true"><Icon name="check" /></div>
+        <div className="forgot-success-copy">
+          <h1>Senha redefinida</h1>
+          <p>Sua senha foi alterada com sucesso. Agora você pode entrar com a nova senha.</p>
+        </div>
+        <ActionButton iconDirection="left" onClick={() => go("login")}>Entrar agora</ActionButton>
+      </section>
+    );
+  }
+
+  return (
+    <section className="scroll-screen center-screen login-screen forgot-password-screen">
+      <div className="login-logo">
+        <SuwaveWordmark subtitle="MOTORISTA" />
+      </div>
+      <div className="login-hero" aria-hidden="true">
+        <Image alt="" className="login-hero-art" height={425} priority src="/motorista/inicio-carro-cidade.png" width={638} />
+      </div>
+      <div className="forgot-copy"><p>Crie uma nova senha para sua conta</p></div>
+      <Field icon="lock" label="Nova senha" onChange={setPassword} secure value={password} />
+      <Field icon="lock" label="Confirmar senha" onChange={setConfirm} secure value={confirm} />
+      <FormToast message={message} />
+      <ActionButton onClick={handleSubmit}>{isSubmitting ? "Salvando..." : "Salvar nova senha"}</ActionButton>
+      <FooterNote />
+    </section>
+  );
+}
+
+function RideAvailable({
+  go,
+  onAccepted,
+  onDeclined,
+  ride,
+  token,
+}: {
+  go: (screen: Screen) => void;
+  onAccepted: () => void;
+  onDeclined: () => void;
+  ride: DriverRideRequest | null;
+  token: string;
+}) {
+  const [message, setMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  async function handleAccept() {
+    if (!ride) return;
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await acceptDriverRideRequest(token, ride.id);
+      onAccepted();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível aceitar a corrida.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDecline() {
+    if (!ride) return;
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await declineDriverRideRequest(token, ride.id);
+      onDeclined();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível recusar a corrida.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="scroll-screen">
+      <AppHeader onBack={() => go("dashboard")} />
+      <div className="success-box" style={{ marginBottom: 0 }}>
+        <span className="review-success-icon" aria-hidden="true">
+          <Icon name="car" />
+        </span>
+        <div>
+          <strong>Nova corrida disponível</strong>
+          <p>{ride?.passenger_name ?? "Passageiro SUWAVE"}</p>
+        </div>
+      </div>
+      <div className="checklist">
+        <span><Icon name="locate" /> {ride?.origin_label ?? "Origem enviada pelo passageiro"}</span>
+        {ride?.destination_label ? <span><Icon name="road" /> {ride.destination_label}</span> : null}
+      </div>
+      <article className="ride-request-card">
+        <dl>
+          <div>
+            <dt>Distância</dt>
+            <dd>{formatRideDistance(ride?.distance_meters)}</dd>
+          </div>
+          <div>
+            <dt>Lugares</dt>
+            <dd>{ride?.requested_seats ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Pedido</dt>
+            <dd>{ride ? formatRideTime(ride.requested_at) : "—"}</dd>
+          </div>
+        </dl>
+      </article>
+      <FormToast message={message} />
+      <ActionButton disabled={isBusy} onClick={handleAccept}>
+        {isBusy ? "Enviando..." : "Aceitar corrida"}
+      </ActionButton>
+      <ActionButton disabled={isBusy} onClick={handleDecline} secondary>
+        Recusar
+      </ActionButton>
+    </section>
+  );
+}
+
+function RideActive({
+  go,
+  onCompleted,
+  ride,
+  token,
+}: {
+  go: (screen: Screen) => void;
+  onCompleted: () => void;
+  ride: DriverRideRequest | null;
+  token: string;
+}) {
+  const [message, setMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  async function handleComplete() {
+    if (!ride) return;
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await completeDriverRideRequest(token, ride.id);
+      onCompleted();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível concluir a corrida.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  const eta = formatDriverEta(ride?.distance_meters);
+  const fare = formatRideFare(ride?.distance_meters, ride?.vehicle_type);
+
+  return (
+    <section className="map-screen">
+      <div className="map-art" aria-label="Área do mapa da corrida ativa">
+        <div className="map-art-placeholder" style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: "#e9f0fb" }}>
+          <Icon name="car" />
+        </div>
+      </div>
+      <div className="bottom-sheet">
+        <div className="sheet-handle-row"><i /></div>
+        <div className="sheet-title">
+          <div className="map-location-copy">
+            <span>Indo ao passageiro</span>
+            <strong>{ride?.origin_label ?? "Ponto de embarque"}</strong>
+          </div>
+        </div>
+        {eta ? (
+          <div className="ride-active-eta">
+            <Icon name="locate" />
+            <div>
+              <strong>{eta}</strong>
+              <span>até o embarque · {ride?.origin_label ?? "origem"}</span>
+            </div>
+          </div>
+        ) : null}
+        <div className="checklist">
+          <span><Icon name="user" /> {ride?.passenger_name ?? "Passageiro SUWAVE"}</span>
+          {ride?.destination_label ? <span><Icon name="locate" /> Destino: {ride.destination_label}</span> : null}
+          {fare ? <span><Icon name="pix" /> Valor estimado: {fare}</span> : null}
+        </div>
+        <FormToast message={message} />
+        <ActionButton disabled={isBusy} onClick={handleComplete}>
+          {isBusy ? "Concluindo..." : "Concluir corrida"}
+        </ActionButton>
+        <ActionButton onClick={() => go("dashboard")} secondary>
+          Voltar ao dashboard
+        </ActionButton>
+      </div>
+    </section>
+  );
+}
+
+function RideDeclined({ go }: { go: (screen: Screen) => void }) {
+  return (
+    <section className="scroll-screen center-screen login-screen forgot-success-screen">
+      <div className="login-logo">
+        <SuwaveWordmark subtitle="MOTORISTA" />
+      </div>
+      <div className="success-check" aria-hidden="true"><Icon name="close" /></div>
+      <div className="forgot-success-copy">
+        <h1>Corrida recusada</h1>
+        <p>A corrida foi recusada. Novas solicitações aparecerão em breve.</p>
+      </div>
+      <ActionButton iconDirection="left" onClick={() => go("dashboard")}>Voltar ao dashboard</ActionButton>
+    </section>
+  );
+}
+
+function RideCompleted({
+  go,
+  ride,
+}: {
+  go: (screen: Screen) => void;
+  ride: DriverRideRequest | null;
+}) {
+  return (
+    <section className="scroll-screen center-screen login-screen forgot-success-screen">
+      <div className="login-logo">
+        <SuwaveWordmark subtitle="MOTORISTA" />
+      </div>
+      <div className="success-check" aria-hidden="true"><Icon name="check" /></div>
+      <div className="forgot-success-copy">
+        <h1>Corrida concluída!</h1>
+        <p>
+          {ride?.destination_label ? `Destino: ${ride.destination_label}. ` : ""}
+          Obrigado por completar a corrida com segurança.
+        </p>
+      </div>
+      <div className="success-box">
+        <span className="review-success-icon" aria-hidden="true"><Icon name="pix" /></span>
+        <div>
+          <strong>Ganhos registrados</strong>
+          <p>O valor será creditado no seu saldo em breve.</p>
+        </div>
+      </div>
+      <ActionButton iconDirection="left" onClick={() => go("dashboard")}>Voltar ao início</ActionButton>
+    </section>
+  );
+}
+
+function DeliveryAvailable({
+  go,
+  offers: initialOffers,
+  onAccepted,
+  onBusy,
+  token,
+}: {
+  go: (screen: Screen) => void;
+  offers: DriverDelivery[];
+  onAccepted: (delivery: DriverDelivery) => void;
+  onBusy: boolean;
+  token: string;
+}) {
+  const [message, setMessage] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [offers, setOffers] = useState<DriverDelivery[]>(initialOffers);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    async function loadOffers() {
+      try {
+        const list = await listAvailableDriverDeliveries(token);
+        if (!cancelled) setOffers(list);
+      } catch {
+        // keep showing whatever was passed in
+      }
+    }
+    loadOffers();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  async function handleAccept(delivery: DriverDelivery) {
+    setBusyId(delivery.id);
+    setMessage("");
+    try {
+      await acceptDriverDelivery(token, delivery.id);
+      onAccepted(delivery);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível aceitar a entrega.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="scroll-screen">
+      <AppHeader onBack={() => go("dashboard")} />
+      <div className="forgot-success-copy" style={{ textAlign: "left", padding: "0 1rem" }}>
+        <h1>Entregas disponíveis</h1>
+        <p>{offers.length ? `${offers.length} oferta(s) disponível(is)` : "Nenhuma entrega disponível no momento."}</p>
+      </div>
+      <FormToast message={message} />
+      {offers.length ? (
+        <div className="ride-request-stack">
+          {offers.map((delivery) => (
+            <article className="ride-request-card delivery-offer-card" key={delivery.id}>
+              <div>
+                <span>Nova entrega</span>
+                <strong>{delivery.seller}</strong>
+                <p>{delivery.address}</p>
+              </div>
+              <dl>
+                <div>
+                  <dt>Pedido</dt>
+                  <dd>{delivery.short_id}</dd>
+                </div>
+                <div>
+                  <dt>Itens</dt>
+                  <dd>{delivery.items_count}</dd>
+                </div>
+                <div>
+                  <dt>Taxa</dt>
+                  <dd>{delivery.delivery_fee}</dd>
+                </div>
+              </dl>
+              <div className="ride-actions single">
+                <button
+                  disabled={onBusy || busyId === delivery.id}
+                  onClick={() => handleAccept(delivery)}
+                  type="button"
+                >
+                  {busyId === delivery.id ? "Aceitando..." : "Aceitar entrega"}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
+      <ActionButton iconDirection="left" onClick={() => go("dashboard")} secondary>
+        Voltar ao dashboard
+      </ActionButton>
+    </section>
+  );
+}
+
+function DeliveryAccepted({
+  delivery,
+  go,
+  onPickedUp,
+  token,
+}: {
+  delivery: DriverDelivery | null;
+  go: (screen: Screen) => void;
+  onPickedUp: () => void;
+  token: string;
+}) {
+  const [message, setMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  async function handlePickup() {
+    if (!delivery) return;
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await pickupDriverDelivery(token, delivery.id);
+      onPickedUp();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível confirmar a retirada.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="scroll-screen">
+      <AppHeader onBack={() => go("dashboard")} />
+      <div className="success-box" style={{ marginBottom: 0 }}>
+        <span className="review-success-icon" aria-hidden="true">
+          <Icon name="spark" />
+        </span>
+        <div>
+          <strong>Entrega aceita — vá até a loja</strong>
+          <p>{delivery?.seller ?? "Loja SUWAVE"}</p>
+        </div>
+      </div>
+      <div className="checklist">
+        <span><Icon name="locate" /> {delivery?.address ?? "Endereço da loja"}</span>
+        <span><Icon name="road" /> Pedido #{delivery?.short_id ?? "—"}</span>
+        <span><Icon name="check" /> {delivery?.items_count ?? 0} iten(s)</span>
+      </div>
+      <FormToast message={message} />
+      <ActionButton disabled={isBusy} onClick={handlePickup}>
+        {isBusy ? "Confirmando..." : "Confirmar retirada"}
+      </ActionButton>
+      <ActionButton onClick={() => go("dashboard")} secondary>
+        Voltar ao dashboard
+      </ActionButton>
+    </section>
+  );
+}
+
+function DeliveryActive({
+  delivery,
+  go,
+  onCompleted,
+  token,
+}: {
+  delivery: DriverDelivery | null;
+  go: (screen: Screen) => void;
+  onCompleted: () => void;
+  token: string;
+}) {
+  const [message, setMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  async function handleComplete() {
+    if (!delivery) return;
+    setIsBusy(true);
+    setMessage("");
+    try {
+      await completeDriverDelivery(token, delivery.id);
+      onCompleted();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Não foi possível concluir a entrega.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="scroll-screen">
+      <AppHeader onBack={() => go("dashboard")} />
+      <div className="success-box" style={{ marginBottom: 0 }}>
+        <span className="review-success-icon" aria-hidden="true">
+          <Icon name="car" />
+        </span>
+        <div>
+          <strong>A caminho do cliente</strong>
+          <p>{delivery?.seller ?? "Loja SUWAVE"} → Cliente</p>
+        </div>
+      </div>
+      <div className="checklist">
+        <span><Icon name="locate" /> {delivery?.address ?? "Endereço do cliente"}</span>
+        <span><Icon name="road" /> Pedido #{delivery?.short_id ?? "—"}</span>
+        <span><Icon name="pix" /> Taxa: {delivery?.delivery_fee ?? "—"}</span>
+      </div>
+      <FormToast message={message} />
+      <ActionButton disabled={isBusy} onClick={handleComplete}>
+        {isBusy ? "Concluindo..." : "Concluir entrega"}
+      </ActionButton>
+      <ActionButton onClick={() => go("dashboard")} secondary>
+        Voltar ao dashboard
+      </ActionButton>
+    </section>
+  );
+}
+
+function DeliveryCompleted({
+  delivery,
+  go,
+}: {
+  delivery: DriverDelivery | null;
+  go: (screen: Screen) => void;
+}) {
+  return (
+    <section className="scroll-screen center-screen login-screen forgot-success-screen">
+      <div className="login-logo">
+        <SuwaveWordmark subtitle="MOTORISTA" />
+      </div>
+      <div className="success-check" aria-hidden="true"><Icon name="check" /></div>
+      <div className="forgot-success-copy">
+        <h1>Entrega concluída!</h1>
+        <p>Pedido #{delivery?.short_id ?? "—"} entregue com sucesso.</p>
+      </div>
+      <div className="success-box">
+        <span className="review-success-icon" aria-hidden="true"><Icon name="pix" /></span>
+        <div>
+          <strong>Taxa de entrega: {delivery?.delivery_fee ?? "—"}</strong>
+          <p>O valor será creditado no seu saldo em breve.</p>
+        </div>
+      </div>
+      <ActionButton iconDirection="left" onClick={() => go("dashboard")}>Voltar ao dashboard</ActionButton>
     </section>
   );
 }
@@ -2727,6 +3236,31 @@ function formatRideTime(value: string) {
   return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+const RIDE_VEHICLE_LABELS: Record<string, string> = {
+  bike: "Bicicleta",
+  car: "Carro",
+  moto: "Moto",
+};
+
+const RIDE_FARE_PER_KM: Record<string, number> = {
+  bike: 1.2,
+  car: 2.8,
+  moto: 2.0,
+};
+
+function formatRideFare(distanceMeters?: number | null, vehicleType?: string | null) {
+  if (!distanceMeters || distanceMeters <= 0) return null;
+  const km = distanceMeters / 1000;
+  const rate = RIDE_FARE_PER_KM[vehicleType ?? ""] ?? RIDE_FARE_PER_KM.car;
+  return new Intl.NumberFormat("pt-BR", { currency: "BRL", style: "currency" }).format(km * rate);
+}
+
+function formatDriverEta(distanceMeters?: number | null) {
+  if (!distanceMeters || distanceMeters <= 0) return null;
+  const mins = Math.max(1, Math.round((distanceMeters / 1000 / 40) * 60));
+  return mins === 1 ? "~1 min" : `~${mins} min`;
+}
+
 function formatFinanceDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -3921,12 +4455,24 @@ function RegisterTrip({ go, token }: { go: (screen: Screen) => void; token?: str
   );
 }
 
+type HistoryFilter = "all" | "ride" | "delivery" | "planned_trip" | "completed" | "cancelled";
+
+const HISTORY_FILTERS: { key: HistoryFilter; label: string; icon: string }[] = [
+  { key: "all", label: "Todas", icon: "calendar" },
+  { key: "ride", label: "Corridas", icon: "car" },
+  { key: "delivery", label: "Entregas", icon: "box" },
+  { key: "planned_trip", label: "Rotas", icon: "road" },
+  { key: "completed", label: "Concluídas", icon: "check" },
+  { key: "cancelled", label: "Recusadas", icon: "close" },
+];
+
 function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: string }) {
   const [items, setItems] = useState<DriverHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedItem, setSelectedItem] = useState<DriverHistoryItem | null>(null);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<HistoryFilter>("all");
   const authError = token ? "" : "Entre novamente para ver seu histórico de viagens.";
 
   const loadHistory = useCallback(async () => {
@@ -3986,7 +4532,25 @@ function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: stri
     }
   }
 
-  const sortedItems = useMemo(() => [...items].sort((left, right) => right.sort_at.localeCompare(left.sort_at)), [items]);
+  const filteredItems = useMemo(() => {
+    const sorted = [...items].sort((left, right) => right.sort_at.localeCompare(left.sort_at));
+    if (activeFilter === "all") return sorted;
+    if (activeFilter === "completed") return sorted.filter((i) => i.status_tone === "completed");
+    if (activeFilter === "cancelled") return sorted.filter((i) => i.status_tone === "cancelled");
+    return sorted.filter((i) => i.type === activeFilter);
+  }, [items, activeFilter]);
+
+  const countByFilter = useMemo(() => {
+    const counts: Record<HistoryFilter, number> = { all: items.length, ride: 0, delivery: 0, planned_trip: 0, completed: 0, cancelled: 0 };
+    for (const item of items) {
+      if (item.type === "ride") counts.ride++;
+      if (item.type === "delivery") counts.delivery++;
+      if (item.type === "planned_trip") counts.planned_trip++;
+      if (item.status_tone === "completed") counts.completed++;
+      if (item.status_tone === "cancelled") counts.cancelled++;
+    }
+    return counts;
+  }, [items]);
 
   return (
     <section className="scroll-screen trip-history-screen">
@@ -4000,62 +4564,101 @@ function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: stri
         </button>
       </header>
 
-      <div className="trip-history-tabs" aria-label="Filtros do histórico">
-        <button className="active" type="button">
-          Todas
-        </button>
-        <button aria-disabled="true" className="inactive" type="button">
-          <Icon name="check" />
-          Concluídas
-        </button>
-        <button aria-disabled="true" className="inactive" type="button">
-          <Icon name="calendar" />
-          Agendadas
-        </button>
+      <div className="trip-history-tabs" aria-label="Filtros do histórico" role="tablist">
+        {HISTORY_FILTERS.map((f) => (
+          <button
+            aria-selected={activeFilter === f.key}
+            className={activeFilter === f.key ? "active" : ""}
+            key={f.key}
+            onClick={() => setActiveFilter(f.key)}
+            role="tab"
+            type="button"
+          >
+            <Icon name={f.icon as Parameters<typeof Icon>[0]["name"]} />
+            {f.label}
+            {countByFilter[f.key] > 0 ? (
+              <span className="trip-history-tab-count">{countByFilter[f.key]}</span>
+            ) : null}
+          </button>
+        ))}
       </div>
 
-      <section className="trip-history-section" aria-label="Todas as viagens">
+      <section className="trip-history-section" aria-label={HISTORY_FILTERS.find((f) => f.key === activeFilter)?.label ?? "Viagens"}>
         <h2>
-          <Icon name="calendar" />
-          Todas as viagens
+          <Icon name={HISTORY_FILTERS.find((f) => f.key === activeFilter)?.icon as Parameters<typeof Icon>[0]["name"] ?? "calendar"} />
+          {HISTORY_FILTERS.find((f) => f.key === activeFilter)?.label ?? "Viagens"}
+          {filteredItems.length > 0 ? <span className="trip-history-count">({filteredItems.length})</span> : null}
         </h2>
 
         {isLoading ? <p className="trip-history-state">Carregando viagens...</p> : null}
         {!isLoading && (error || authError) ? <p className="trip-history-state error">{error || authError}</p> : null}
-        {!isLoading && !error && !authError && sortedItems.length === 0 ? (
-          <p className="trip-history-state">Nenhuma viagem registrada ainda.</p>
+        {!isLoading && !error && !authError && filteredItems.length === 0 ? (
+          <p className="trip-history-state">
+            {activeFilter === "all"
+              ? "Nenhuma viagem registrada ainda."
+              : `Nenhum item em "${HISTORY_FILTERS.find((f) => f.key === activeFilter)?.label}".`}
+          </p>
         ) : null}
 
-        {!isLoading && !error && !authError && sortedItems.length > 0 ? (
+        {!isLoading && !error && !authError && filteredItems.length > 0 ? (
           <div className="trip-history-list">
-            {sortedItems.map((item) => (
+            {filteredItems.map((item) => (
               <TripHistoryCard key={`${item.type}-${item.id}`} item={item} onSelect={setSelectedItem} />
             ))}
           </div>
         ) : null}
       </section>
 
-      <p className="trip-history-tip">
-        <Icon name="help" />
-        <span><strong>Dica:</strong> Toque em uma corrida ou rota para ver os detalhes completos.</span>
-      </p>
-
       {selectedItem ? (
         <div className="trip-detail-overlay" role="presentation" onClick={() => setSelectedItem(null)}>
           <aside
-            aria-label="Detalhes da viagem"
+            aria-label="Comprovante da viagem"
             className="trip-detail-sheet"
             onClick={(event) => event.stopPropagation()}
           >
-            <button aria-label="Fechar detalhes" className="trip-detail-close" onClick={() => setSelectedItem(null)} type="button">
+            <button aria-label="Fechar comprovante" className="trip-detail-close" onClick={() => setSelectedItem(null)} type="button">
               <Icon name="close" />
             </button>
-            <h2>{selectedItem.title}</h2>
+
+            {/* ── Cabeçalho do comprovante ── */}
+            <div className="trip-detail-hero">
+              <span className={`trip-history-icon large ${selectedItem.status_tone}`}>
+                <Icon name={
+                  selectedItem.status_tone === "completed" ? "check"
+                  : selectedItem.status_tone === "cancelled" ? "close"
+                  : selectedItem.type === "ride" || selectedItem.type === "delivery" ? "car"
+                  : "calendar"
+                } />
+              </span>
+              <h2>{selectedItem.title}</h2>
+              <p className="trip-detail-subtitle">{selectedItem.subtitle}</p>
+              <span className={`trip-history-badge ${selectedItem.status_tone}`}>{selectedItem.status_label}</span>
+            </div>
+
+            {/* ── Tipo e data ── */}
+            <div className="trip-detail-meta">
+              <span>
+                <Icon name="calendar" />
+                {selectedItem.date_label}
+              </span>
+              <span>
+                <Icon name="road" />
+                {selectedItem.distance_label}
+              </span>
+              <span>
+                <Icon name={selectedItem.type === "ride" ? "car" : selectedItem.type === "delivery" ? "box" : "road"} />
+                {selectedItem.type === "ride" ? "Corrida" : selectedItem.type === "delivery" ? "Entrega" : "Rota planejada"}
+              </span>
+            </div>
+
+            {/* ── Detalhes do comprovante ── */}
             <div className="trip-detail-grid">
               {selectedItem.metrics.map((metric) => (
                 <TripDetailItem key={metric.label} label={metric.label} value={metric.value} />
               ))}
             </div>
+
+            {/* ── Ações para itens pendentes ── */}
             {selectedItem.status_tone === "scheduled" ? (
               <div className="trip-detail-actions">
                 <button
@@ -4084,6 +4687,14 @@ function TripHistory({ go, token }: { go: (screen: Screen) => void; token?: stri
                   </button>
                 ) : null}
               </div>
+            ) : null}
+
+            {/* ── Rodapé do comprovante concluído ── */}
+            {selectedItem.status_tone === "completed" ? (
+              <p className="trip-detail-receipt-note">
+                <Icon name="check" />
+                Comprovante gerado em {selectedItem.date_label}
+              </p>
             ) : null}
           </aside>
         </div>
@@ -4473,10 +5084,12 @@ function NotificationsScreen({ go, token }: { go: (screen: Screen) => void; toke
 function Dashboard({
   go,
   onLogout,
+  onViewRide,
   token,
 }: {
   go: (screen: Screen) => void;
   onLogout: () => void;
+  onViewRide?: (ride: DriverRideRequest) => void;
   token?: string;
 }) {
   const [isOnline, setIsOnline] = useState(false);
@@ -4487,6 +5100,8 @@ function Dashboard({
   const [deliveryOffers, setDeliveryOffers] = useState<DriverDelivery[]>([]);
   const [busyDeliveryId, setBusyDeliveryId] = useState<string | null>(null);
   const [rideFeedback, setRideFeedback] = useState("");
+  const [newRideAlert, setNewRideAlert] = useState(false);
+  const prevRideCountRef = useRef(0);
   const [isDriverMenuOpen, setIsDriverMenuOpen] = useState(false);
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
   const [mapLocation, setMapLocation] = useState<DriverMapLocation>(defaultDriverMapLocation);
@@ -4655,6 +5270,17 @@ function Dashboard({
       window.clearInterval(interval);
     };
   }, [isOnline, token]);
+
+  useEffect(() => {
+    const current = rideRequests.length;
+    if (current > prevRideCountRef.current && effectiveIsOnline) {
+      setNewRideAlert(true);
+      const timeout = window.setTimeout(() => setNewRideAlert(false), 4500);
+      prevRideCountRef.current = current;
+      return () => window.clearTimeout(timeout);
+    }
+    prevRideCountRef.current = current;
+  }, [rideRequests.length, effectiveIsOnline]);
 
   async function handleToggleOnline() {
     if (!token) {
@@ -4839,50 +5465,80 @@ function Dashboard({
           </div>
         </div>
         <FormToast message={shouldShowVehicleWaiting ? "" : error} />
+        {newRideAlert && (
+          <div className="ride-new-toast" role="alert" aria-live="assertive">
+            Nova corrida disponível!
+          </div>
+        )}
         {rideRequests.length ? (
           <div className="ride-request-stack">
-            {rideRequests.slice(0, 2).map((rideRequest) => (
-              <article className="ride-request-card" key={rideRequest.id}>
-                <div>
-                  <span>Nova corrida</span>
-                  <strong>{rideRequest.passenger_name ?? "Passageiro SUWAVE"}</strong>
-                  <p>
-                    {rideRequest.origin_label ?? "Origem enviada pelo passageiro"}
-                    {rideRequest.destination_label ? ` → ${rideRequest.destination_label}` : ""}
-                  </p>
-                </div>
-                <dl>
+            {rideRequests.slice(0, 2).map((rideRequest) => {
+              const vehicleLabel = RIDE_VEHICLE_LABELS[rideRequest.vehicle_type ?? ""] ?? null;
+              const fareEstimate = formatRideFare(rideRequest.distance_meters, rideRequest.vehicle_type);
+              return (
+                <article className="ride-request-card" key={rideRequest.id}>
                   <div>
-                    <dt>Distância</dt>
-                    <dd>{formatRideDistance(rideRequest.distance_meters)}</dd>
+                    <span className="ride-card-header">
+                      Nova corrida
+                      {vehicleLabel ? (
+                        <span className="ride-vehicle-badge">{vehicleLabel}</span>
+                      ) : null}
+                    </span>
+                    <strong>{rideRequest.passenger_name ?? "Passageiro SUWAVE"}</strong>
+                    <p>
+                      {rideRequest.origin_label ?? "Origem enviada pelo passageiro"}
+                      {rideRequest.destination_label ? ` → ${rideRequest.destination_label}` : ""}
+                    </p>
                   </div>
-                  <div>
-                    <dt>Pedido</dt>
-                    <dd>{formatRideTime(rideRequest.requested_at)}</dd>
+                  {fareEstimate ? (
+                    <div className="ride-fare-row">
+                      <span className="ride-fare-label">Valor estimado</span>
+                      <strong className="ride-fare-value">{fareEstimate}</strong>
+                    </div>
+                  ) : null}
+                  <dl>
+                    <div>
+                      <dt>Distância</dt>
+                      <dd>{formatRideDistance(rideRequest.distance_meters)}</dd>
+                    </div>
+                    <div>
+                      <dt>Pedido</dt>
+                      <dd>{formatRideTime(rideRequest.requested_at)}</dd>
+                    </div>
+                    <div>
+                      <dt>Lugares</dt>
+                      <dd>{rideRequest.requested_seats}</dd>
+                    </div>
+                  </dl>
+                  <div className="ride-actions">
+                    <button
+                      disabled={busyRideId === rideRequest.id}
+                      onClick={() => handleRideAction(rideRequest.id, "decline")}
+                      type="button"
+                    >
+                      Recusar
+                    </button>
+                    <button
+                      disabled={busyRideId === rideRequest.id}
+                      onClick={() => handleRideAction(rideRequest.id, "accept")}
+                      type="button"
+                    >
+                      {busyRideId === rideRequest.id ? "Enviando..." : "Aceitar"}
+                    </button>
                   </div>
-                  <div>
-                    <dt>Lugares</dt>
-                    <dd>{rideRequest.requested_seats}</dd>
-                  </div>
-                </dl>
-                <div className="ride-actions">
-                  <button
-                    disabled={busyRideId === rideRequest.id}
-                    onClick={() => handleRideAction(rideRequest.id, "decline")}
-                    type="button"
-                  >
-                    Recusar
-                  </button>
-                  <button
-                    disabled={busyRideId === rideRequest.id}
-                    onClick={() => handleRideAction(rideRequest.id, "accept")}
-                    type="button"
-                  >
-                    {busyRideId === rideRequest.id ? "Enviando..." : "Aceitar"}
-                  </button>
-                </div>
-              </article>
-            ))}
+                  {onViewRide ? (
+                    <div className="ride-actions single">
+                      <button
+                        onClick={() => onViewRide(rideRequest)}
+                        type="button"
+                      >
+                        Ver detalhes
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         ) : null}
         {deliveryOffers.length ? (
@@ -4923,8 +5579,8 @@ function Dashboard({
         ) : null}
         {rideFeedback ? <p className="ride-feedback">{rideFeedback}</p> : null}
         {shouldShowVehicleWaiting && pendingVehicle ? <VehicleWaitingCard vehicle={pendingVehicle} /> : null}
-        <ActionButton onClick={handleToggleOnline}>
-          {isSubmitting ? "Atualizando..." : effectiveIsOnline ? "Offline" : hasApprovedVehicle ? "Online" : "Offline"}
+        <ActionButton className={effectiveIsOnline ? "is-online" : undefined} onClick={handleToggleOnline}>
+          {isSubmitting ? "Atualizando..." : hasApprovedVehicle ? "Online" : "Offline"}
         </ActionButton>
         {shouldShowAddVehicle ? (
           <ActionButton onClick={() => go("vehicle-mode")} secondary>
@@ -5852,6 +6508,8 @@ export default function Home() {
   const [showInstallSheet, setShowInstallSheet] = useState(false);
   const [isIOS] = useState(isIOSDevice);
   const [driverToken, setDriverToken] = useState<string | undefined>();
+  const [activeRideRequest, setActiveRideRequest] = useState<DriverRideRequest | null>(null);
+  const [activeDeliveryOrder, setActiveDeliveryOrder] = useState<DriverDelivery | null>(null);
   const signupForm = useDriverFlowStore((state) => state.signupForm);
   const setSignupForm = useDriverFlowStore((state) => state.setSignupForm);
   const cnhFront = useDriverFlowStore((state) => state.cnhFront);
@@ -5887,6 +6545,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const resetToken = new URLSearchParams(window.location.search).get("token");
+    if (resetToken) {
+      setScreen("reset-password");
+      return;
+    }
     const restoreTimer = window.setTimeout(() => {
       const storedToken = getStoredDriverToken();
 
@@ -5972,6 +6635,37 @@ export default function Home() {
     resetFlow();
   }, [resetFlow]);
 
+  const handleRideAvailable = useCallback((ride: DriverRideRequest) => {
+    setActiveRideRequest(ride);
+    setScreen("ride-available");
+  }, []);
+
+  const handleRideAccepted = useCallback(() => {
+    setScreen("ride-active");
+  }, []);
+
+  const handleRideDeclined = useCallback(() => {
+    setActiveRideRequest(null);
+    setScreen("ride-declined");
+  }, []);
+
+  const handleRideCompleted = useCallback(() => {
+    setScreen("ride-completed");
+  }, []);
+
+  const handleDeliveryAccepted = useCallback((delivery: DriverDelivery) => {
+    setActiveDeliveryOrder(delivery);
+    setScreen("delivery-accepted");
+  }, []);
+
+  const handleDeliveryPickup = useCallback(() => {
+    setScreen("delivery-active");
+  }, []);
+
+  const handleDeliveryCompleted = useCallback(() => {
+    setScreen("delivery-completed");
+  }, []);
+
   const content = useMemo(() => {
     const go = setScreen;
     switch (screen) {
@@ -5979,6 +6673,8 @@ export default function Home() {
         return <ForgotPassword go={go} setResetContact={setResetContact} />;
       case "forgot-success":
         return <ForgotPasswordSuccess contact={resetContact} go={go} />;
+      case "reset-password":
+        return <ResetPassword go={go} />;
       case "signup":
         return (
           <Signup
@@ -6022,7 +6718,7 @@ export default function Home() {
       case "status":
         return <Status go={go} token={driverToken} />;
       case "dashboard":
-        return <Dashboard go={go} onLogout={handleLogout} token={driverToken} />;
+        return <Dashboard go={go} onLogout={handleLogout} onViewRide={handleRideAvailable} token={driverToken} />;
       case "profile":
         return <DriverProfileScreen go={go} onLogout={handleLogout} token={driverToken} />;
       case "finance":
@@ -6082,16 +6778,41 @@ export default function Home() {
             vehicleUploads={vehicleUploads}
           />
         );
+      case "ride-available":
+        return <RideAvailable ride={activeRideRequest} go={go} token={driverToken ?? ""} onAccepted={handleRideAccepted} onDeclined={handleRideDeclined} />;
+      case "ride-active":
+        return <RideActive ride={activeRideRequest} go={go} token={driverToken ?? ""} onCompleted={handleRideCompleted} />;
+      case "ride-declined":
+        return <RideDeclined go={go} />;
+      case "ride-completed":
+        return <RideCompleted ride={activeRideRequest} go={go} />;
+      case "delivery-available":
+        return <DeliveryAvailable offers={[]} go={go} token={driverToken ?? ""} onAccepted={handleDeliveryAccepted} onBusy={false} />;
+      case "delivery-accepted":
+        return <DeliveryAccepted delivery={activeDeliveryOrder} go={go} token={driverToken ?? ""} onPickedUp={handleDeliveryPickup} />;
+      case "delivery-active":
+        return <DeliveryActive delivery={activeDeliveryOrder} go={go} token={driverToken ?? ""} onCompleted={handleDeliveryCompleted} />;
+      case "delivery-completed":
+        return <DeliveryCompleted delivery={activeDeliveryOrder} go={go} />;
       default:
         return <Login initialError={sessionError} go={go} onAuthenticated={handleAuthenticated} onClearInitialError={() => setSessionError("")} />;
     }
   }, [
+    activeDeliveryOrder,
+    activeRideRequest,
     cnhBack,
     cnhFront,
     driverToken,
     faceFile,
     handleAuthenticated,
+    handleDeliveryAccepted,
+    handleDeliveryCompleted,
+    handleDeliveryPickup,
     handleLogout,
+    handleRideAccepted,
+    handleRideAvailable,
+    handleRideCompleted,
+    handleRideDeclined,
     resetFlow,
     resetContact,
     screen,
