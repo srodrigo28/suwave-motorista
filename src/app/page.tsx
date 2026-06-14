@@ -5263,7 +5263,7 @@ function Dashboard({
     }
 
     syncRideRequests();
-    const interval = window.setInterval(syncRideRequests, 10000);
+    const interval = window.setInterval(syncRideRequests, 4000);
 
     return () => {
       cancelled = true;
